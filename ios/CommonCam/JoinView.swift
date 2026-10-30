@@ -4,7 +4,7 @@ import SwiftUI
 /// After scanning: pick a fun name and colour, accept the terms, join.
 struct JoinView: View {
     let api: APIClient
-    let qrToken: String
+    let code: JoinCode
     let onJoined: (Membership) -> Void
 
     @State private var displayName = FunName.random()
@@ -55,10 +55,16 @@ struct JoinView: View {
         isJoining = true
         defer { isJoining = false }
         do {
-            onJoined(try await api.join(qrToken: qrToken, displayName: displayName, colour: colour, consentAccepted: true))
+            let membership = switch code {
+            case .qrToken(let qrToken):
+                try await api.join(qrToken: qrToken, displayName: displayName, colour: colour, consentAccepted: true)
+            case .pin(let pin):
+                try await api.join(pin: pin, displayName: displayName, colour: colour, consentAccepted: true)
+            }
+            onJoined(membership)
         } catch let error as APIError {
             errorMessage = switch error.statusCode {
-            case 404: "That QR code isn't a commonCam group."
+            case 404: "That QR code or PIN isn't a commonCam group."
             case 409: "This group is full."
             case 410: "This group has ended."
             case 429: "Too many attempts. Try again in a few minutes."

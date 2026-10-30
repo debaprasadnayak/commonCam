@@ -25,6 +25,7 @@ struct HostGroupView: View {
                     ProgressView().frame(maxWidth: .infinity)
                 }
             }
+            PinSection(api: api, group: group)
             if let errorMessage {
                 Section { Text(errorMessage).foregroundStyle(.red) }
             }

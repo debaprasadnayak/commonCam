@@ -1,4 +1,5 @@
 import { handleJoin, handlePublic } from "./join";
+import { handlePin } from "./pin";
 import { TIERS } from "./tiers";
 
 export interface Env {
@@ -61,6 +62,9 @@ export default {
         .all<GroupRow>();
       return Response.json(results.map(toJson));
     }
+
+    const pinResponse = await handlePin(request, url, env, deviceId);
+    if (pinResponse) return pinResponse;
 
     const joinResponse = await handleJoin(request, url, env, deviceId);
     if (joinResponse) return joinResponse;

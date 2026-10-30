@@ -1,4 +1,5 @@
 import { type Env, type GroupRow, toJson } from "./index";
+import { normalizePin } from "./pin";
 
 // Placeholders until the app is in App Store Connect and has an Apple team (see notes).
 const APP_STORE_URL = "https://apps.apple.com/app/commoncam/id0000000000";
@@ -85,15 +86,18 @@ async function join(request: Request, env: Env, deviceId: string): Promise<Respo
   if (await isRateLimited(env, keys)) return new Response("Too many attempts, try again later", { status: 429 });
 
   const body = await request
-    .json<{ qrToken?: unknown; displayName?: unknown; colour?: unknown; consent?: unknown }>()
+    .json<{ qrToken?: unknown; pin?: unknown; displayName?: unknown; colour?: unknown; consent?: unknown }>()
     .catch(() => ({}) as Record<string, unknown>);
+  const pin = normalizePin(body.pin);
   const group =
     typeof body.qrToken === "string"
       ? await env.DB.prepare(`SELECT ${GROUP_COLUMNS} FROM groups WHERE qr_token = ?`).bind(body.qrToken).first<GroupRow>()
-      : null;
+      : pin
+        ? await env.DB.prepare(`SELECT ${GROUP_COLUMNS} FROM groups WHERE pin = ?`).bind(pin).first<GroupRow>()
+        : null;
   if (!group) {
     await recordFailure(env, keys);
-    return new Response("Unknown QR code", { status: 404 });
+    return new Response("Unknown QR code or PIN", { status: 404 });
   }
   if (group.state !== "Active" || Date.parse(group.ends_at) <= Date.now()) {
     return new Response("This group is no longer open", { status: 410 });
