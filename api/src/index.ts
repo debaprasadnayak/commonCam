@@ -1,4 +1,5 @@
 import { handleApproval } from "./approval";
+import { handleDeleteItem } from "./deleteItem";
 import { insertTasterGroup, newGroupRow, toJson, type GroupRow } from "./groups";
 import { handleHostControls } from "./hostControls";
 import { handleJoin, handlePublic } from "./join";
@@ -64,6 +65,8 @@ export default {
 
     const mediaResponse = await handleMedia(request, url, env, deviceId);
     if (mediaResponse) return mediaResponse;
+    const deleteItemResponse = await handleDeleteItem(request, url, env, deviceId);
+    if (deleteItemResponse) return deleteItemResponse;
 
     return new Response("Not found", { status: 404 });
   },
