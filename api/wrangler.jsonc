@@ -5,9 +5,8 @@
   "d1_databases": [
     {
       "binding": "DB",
-      // Placeholder until the Cloudflare provisioning ticket creates the real database.
       "database_name": "commoncam",
-      "database_id": "00000000-0000-0000-0000-000000000000",
+      "database_id": "3a9299e2-65c5-4b2b-9270-81a066c95664",
       "migrations_dir": "migrations"
     }
   ],
