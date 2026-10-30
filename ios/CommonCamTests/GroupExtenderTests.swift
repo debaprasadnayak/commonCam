@@ -18,7 +18,7 @@ final class GroupExtenderTests: StoreKitTestCase {
             if let error { throw error }
             extensions.append((groupID, jws))
             return EventGroup(id: groupID, tier: "taster", state: "Active", peopleCap: 4, storageCapBytes: 1, startsAt: .now, endsAt: .now)
-        }, buy: buyInSession)
+        }, buy: { [unowned self] in try await self.buyInSession($0, $1) })
     }
 
     func testBuyingAnExtensionSendsItsTransactionForThatGroupAndFinishesIt() async throws {
@@ -52,7 +52,7 @@ final class GroupExtenderTests: StoreKitTestCase {
         let pocketGroup = EventGroup(
             id: groupID, tier: "pocket", state: "Active", peopleCap: 10, storageCapBytes: 1, startsAt: .now, endsAt: .now
         )
-        _ = try? await GroupPurchaser(apply: { _, _ in throw APIError(statusCode: 500) }, buy: buyInSession)
+        _ = try? await GroupPurchaser(apply: { _, _ in throw APIError(statusCode: 500) }, buy: { [unowned self] in try await self.buyInSession($0, $1) })
             .purchase(.addOn(.day), for: pocketGroup)
         let unfinishedAfterFailure = await unfinishedCount(settlingAt: 1)
         XCTAssertEqual(unfinishedAfterFailure, 1)

@@ -24,7 +24,7 @@ final class GroupPurchaserTests: StoreKitTestCase {
             return EventGroup(
                 id: groupID, tier: "party", state: "Active", peopleCap: 25, storageCapBytes: 1, startsAt: .now, endsAt: .now
             )
-        }, buy: buyInSession)
+        }, buy: { [unowned self] in try await self.buyInSession($0, $1) })
     }
 
     func testOffersEachUpgradeAtTheDifferenceAndTheAddOns() async throws {
@@ -64,7 +64,7 @@ final class GroupPurchaserTests: StoreKitTestCase {
     }
 
     func testLeavesUnfinishedTierPurchasesToTheTierPurchaser() async throws {
-        _ = try? await TierPurchaser(activate: { _, _ in throw APIError(statusCode: 500) }, buy: buyInSession).purchase(.party)
+        _ = try? await TierPurchaser(activate: { _, _ in throw APIError(statusCode: 500) }, buy: { [unowned self] in try await self.buyInSession($0, $1) }).purchase(.party)
         let unfinishedAfterFailure = await unfinishedCount(settlingAt: 1)
         XCTAssertEqual(unfinishedAfterFailure, 1)
 

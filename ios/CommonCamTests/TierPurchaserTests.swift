@@ -20,7 +20,7 @@ final class TierPurchaserTests: StoreKitTestCase {
                 id: "g1", tier: tier.rawValue, state: "Active", peopleCap: 25, storageCapBytes: 1,
                 startsAt: .now, endsAt: .now
             )
-        }, buy: buyInSession)
+        }, buy: { [unowned self] in try await self.buyInSession($0, $1) })
     }
 
     func testLoadsAProductForEveryPaidTier() async throws {
