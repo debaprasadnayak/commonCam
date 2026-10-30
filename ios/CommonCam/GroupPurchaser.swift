@@ -55,14 +55,9 @@ final class GroupPurchaser {
         }
     }
 
-    /// Applies upgrades/add-ons whose earlier application failed (e.g. offline). Call on launch.
-    func applyUnfinished() async -> [EventGroup] {
-        var groups: [EventGroup] = []
-        for await verification in Transaction.unfinished {
-            guard GroupPurchase(productID: verification.unsafePayloadValue.productID) != nil else { continue }
-            if let group = try? await applyAndFinish(verification) { groups.append(group) }
-        }
-        return groups
+    /// `PurchaseRouter` handler: applies an upgrade/add-on that arrived outside `purchase(_:for:)`; nil for other products.
+    func handle(_ verification: VerificationResult<Transaction>) async -> EventGroup? {
+        (try? await applyAndFinish(verification)) ?? nil
     }
 
     private func applyAndFinish(_ verification: VerificationResult<Transaction>) async throws -> EventGroup? {

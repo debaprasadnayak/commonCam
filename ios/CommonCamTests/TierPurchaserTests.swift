@@ -49,7 +49,7 @@ final class TierPurchaserTests: StoreKitTestCase {
         let unfinishedAfterFailure = await unfinishedCount(settlingAt: 1)
         XCTAssertEqual(unfinishedAfterFailure, 1)
 
-        let groups = await purchaser().activateUnfinished()
+        let groups = await PurchaseRouter(handlers: [purchaser().handle]).processUnfinished()
 
         XCTAssertEqual(groups.map(\.tier), ["festival"])
         let unfinished = await unfinishedCount(settlingAt: 0)
@@ -61,7 +61,7 @@ final class TierPurchaserTests: StoreKitTestCase {
         let unfinishedAfterFailure = await unfinishedCount(settlingAt: 1)
         XCTAssertEqual(unfinishedAfterFailure, 1)
 
-        let groups = await purchaser(failingWith: APIError(statusCode: 409)).activateUnfinished()
+        let groups = await PurchaseRouter(handlers: [purchaser(failingWith: APIError(statusCode: 409)).handle]).processUnfinished()
 
         XCTAssertEqual(groups, [])
         let unfinished = await unfinishedCount(settlingAt: 0)
