@@ -10,6 +10,7 @@ struct GalleryView: View {
     @State private var isCameraOpen = false
     @State private var uploading = 0
     @State private var errorMessage: String?
+    @State private var pendingDelete: GalleryItem?
 
     var body: some View {
         ScrollView {
@@ -26,6 +27,11 @@ struct GalleryView: View {
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 110), spacing: 2)], spacing: 2) {
                 ForEach(items) { item in
                     GalleryTile(item: item)
+                        .contextMenu {
+                            if item.canDelete {
+                                Button("Delete", systemImage: "trash", role: .destructive) { pendingDelete = item }
+                            }
+                        }
                 }
             }
         }
@@ -44,10 +50,30 @@ struct GalleryView: View {
             }
         }
         .refreshable { await reload() }
+        .confirmationDialog(
+            "Delete this photo for everyone?",
+            isPresented: Binding(get: { pendingDelete != nil }, set: { if !$0 { pendingDelete = nil } }),
+            titleVisibility: .visible,
+            presenting: pendingDelete
+        ) { item in
+            Button("Delete", role: .destructive) { Task { await delete(item) } }
+        }
     }
 
     private func reload() async {
         if let latest = try? await api.gallery(of: group.id) { items = latest }
+    }
+
+    private func delete(_ item: GalleryItem) async {
+        do {
+            try await api.deleteItem(item.id, in: group.id)
+            items.removeAll { $0.id == item.id }
+            errorMessage = nil
+        } catch let error as APIError {
+            errorMessage = error.statusCode == 403 ? "You can only delete your own photos." : "Couldn't delete the photo (error \(error.statusCode))."
+        } catch {
+            errorMessage = "Couldn't delete the photo: \(error.localizedDescription)"
+        }
     }
 
     private func share(_ photo: CapturedPhoto) async {

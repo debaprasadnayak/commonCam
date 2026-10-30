@@ -56,4 +56,6 @@ public struct GalleryItem: Codable, Equatable, Identifiable, Sendable {
     public let contributor: Contributor
     public let downloadUrl: URL
     public let downloadUrlExpiresAt: Date
+    /// Whether this device may delete it: its own upload, or any item for the host and co-hosts.
+    public var canDelete = false
 }
