@@ -7,6 +7,8 @@ import StoreKit
 @MainActor
 final class TierPurchaser {
     typealias Activate = @MainActor (PaidTier, _ signedTransaction: String) async throws -> EventGroup
+    /// The StoreKit purchase itself; tests swap in `SKTestSession.buyProduct` (see `StoreKitTestCase`).
+    typealias Buy = @MainActor (Product, Set<Product.PurchaseOption>) async throws -> Product.PurchaseResult
 
     enum PurchaseError: Error {
         case productUnavailable
@@ -14,9 +16,11 @@ final class TierPurchaser {
     }
 
     private let activate: Activate
+    private let buy: Buy
 
-    init(activate: @escaping Activate) {
+    init(activate: @escaping Activate, buy: @escaping Buy = { try await $0.purchase(options: $1) }) {
         self.activate = activate
+        self.buy = buy
     }
 
     func products() async throws -> [PaidTier: Product] {
@@ -31,7 +35,7 @@ final class TierPurchaser {
         guard let product = try await Product.products(for: [tier.productID]).first else {
             throw PurchaseError.productUnavailable
         }
-        switch try await product.purchase() {
+        switch try await buy(product, []) {
         case .success(let verification):
             return try await activateAndFinish(verification)
         case .userCancelled, .pending:

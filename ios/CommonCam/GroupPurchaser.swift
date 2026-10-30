@@ -7,6 +7,7 @@ import StoreKit
 @MainActor
 final class GroupPurchaser {
     typealias Apply = @MainActor (_ signedTransaction: String, _ groupID: String) async throws -> EventGroup
+    typealias Buy = TierPurchaser.Buy
 
     struct Offer {
         let purchase: GroupPurchase
@@ -19,9 +20,11 @@ final class GroupPurchaser {
     }
 
     private let apply: Apply
+    private let buy: Buy
 
-    init(apply: @escaping Apply) {
+    init(apply: @escaping Apply, buy: @escaping Buy = { try await $0.purchase(options: $1) }) {
         self.apply = apply
+        self.buy = buy
     }
 
     convenience init(api: APIClient) {
@@ -42,7 +45,7 @@ final class GroupPurchaser {
         guard let token = UUID(uuidString: group.id),
               let product = try await Product.products(for: [purchase.productID]).first
         else { throw PurchaseError.productUnavailable }
-        switch try await product.purchase(options: [.appAccountToken(token)]) {
+        switch try await buy(product, [.appAccountToken(token)]) {
         case .success(let verification):
             return try await applyAndFinish(verification)
         case .userCancelled, .pending:

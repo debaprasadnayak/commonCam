@@ -1,42 +1,26 @@
 import CommonCamKit
 import StoreKit
-import StoreKitTest
 import XCTest
 @testable import CommonCam
 
 @MainActor
-final class TierPurchaserTests: XCTestCase {
-    private var session: SKTestSession!
+final class TierPurchaserTests: StoreKitTestCase {
     private var activations: [(tier: PaidTier, jws: String)] = []
 
     override func setUp() async throws {
-        session = try SKTestSession(configurationFileNamed: "CommonCam")
-        session.disableDialogs = true
-        session.clearTransactions()
+        try await super.setUp()
         activations = []
     }
 
     private func purchaser(failingWith error: Error? = nil) -> TierPurchaser {
-        TierPurchaser { [unowned self] tier, jws in
+        TierPurchaser(activate: { [unowned self] tier, jws in
             if let error { throw error }
             activations.append((tier, jws))
             return EventGroup(
                 id: "g1", tier: tier.rawValue, state: "Active", peopleCap: 25, storageCapBytes: 1,
                 startsAt: .now, endsAt: .now
             )
-        }
-    }
-
-    /// StoreKit applies purchases and `finish()` asynchronously (slow on a loaded machine), so poll briefly.
-    private func unfinishedCount(settlingAt expected: Int) async -> Int {
-        var count = -1
-        for _ in 0..<50 {
-            count = 0
-            for await _ in Transaction.unfinished { count += 1 }
-            if count == expected { break }
-            try? await Task.sleep(for: .milliseconds(100))
-        }
-        return count
+        }, buy: buyInSession)
     }
 
     func testLoadsAProductForEveryPaidTier() async throws {
