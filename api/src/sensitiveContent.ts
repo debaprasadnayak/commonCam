@@ -1,4 +1,5 @@
 import type { Env } from "./index";
+import { insertReport } from "./moderation";
 
 /** Reason on the report filed for an item the uploader's device flagged; the owner reviews it like any other report. */
 export const SENSITIVE_REASON = "Flagged as possibly sensitive by on-device analysis";
@@ -13,9 +14,12 @@ export function flagIfSensitive(env: Env, sensitive: unknown, groupId: string, i
   if (sensitive !== true) return [];
   return [
     env.DB.prepare("UPDATE items SET hidden = 1 WHERE id = ? AND status = 'confirming'").bind(itemId),
-    env.DB.prepare(
-      `INSERT INTO reports (id, group_id, item_id, member_id, reporter_device_id, reason, status, created_at)
-       SELECT ?1, ?2, ?3, NULL, ?4, ?5, 'open', ?6 WHERE EXISTS (SELECT 1 FROM items WHERE id = ?3 AND status = 'confirming')`,
-    ).bind(crypto.randomUUID(), groupId, itemId, deviceId, SENSITIVE_REASON, new Date().toISOString()),
+    insertReport(
+      env.DB,
+      groupId,
+      deviceId,
+      { id: crypto.randomUUID(), item_id: itemId, member_id: null, reason: SENSITIVE_REASON, status: "open", created_at: new Date().toISOString() },
+      "confirming",
+    ),
   ];
 }

@@ -1,8 +1,8 @@
 import { loadGroup, toJson } from "./groups";
 import type { Env } from "./index";
-import { isReplayedTransaction, verifyPurchase } from "./purchases";
+import { isReplayedTransaction, recordOrder, verifyPurchase } from "./purchases";
 import { EXTENSION, type Tier } from "./tiers";
-import { raiseLimits, recordOrder } from "./upgrades";
+import { raiseLimits } from "./upgrades";
 
 /**
  * `POST /groups/:id/extend {signedTransaction}`: the host pays to reopen an ended group (Grace → Active)

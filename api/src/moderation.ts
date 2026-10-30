@@ -13,7 +13,7 @@ const MAX_REASON_LENGTH = 500;
 export const VISIBLE_TO_VIEWER = `(i.hidden = 0 OR ?3 = 1) AND NOT EXISTS
   (SELECT 1 FROM blocks b WHERE b.group_id = i.group_id AND b.blocker_device_id = ?2 AND b.blocked_member_id = i.member_id)`;
 
-interface ReportRow {
+export interface ReportRow {
   id: string;
   item_id: string | null;
   member_id: string | null;
@@ -149,13 +149,27 @@ async function createReport(
     status: "open",
     created_at: new Date().toISOString(),
   };
-  const insert = env.DB.prepare(
-    `INSERT INTO reports (id, group_id, item_id, member_id, reporter_device_id, reason, status, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-  ).bind(row.id, groupId, row.item_id, row.member_id, deviceId, row.reason, row.status, row.created_at);
+  const insert = insertReport(env.DB, groupId, deviceId, row);
   const hide = env.DB.prepare("UPDATE items SET hidden = 1 WHERE id = ?").bind(targetId);
   await env.DB.batch(kind === "items" ? [insert, hide] : [insert]);
   return Response.json(reportJson(row), { status: 201 });
+}
+
+/** Opens report `row`; a report on an item is inserted only while the item has `itemStatus`. */
+export function insertReport(
+  db: D1Database,
+  groupId: string,
+  reporterDeviceId: string,
+  row: ReportRow,
+  itemStatus = "ready",
+): D1PreparedStatement {
+  return db
+    .prepare(
+      `INSERT INTO reports (id, group_id, item_id, member_id, reporter_device_id, reason, status, created_at)
+       SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8
+       WHERE ?3 IS NULL OR EXISTS (SELECT 1 FROM items WHERE id = ?3 AND status = ?9)`,
+    )
+    .bind(row.id, groupId, row.item_id, row.member_id, reporterDeviceId, row.reason, row.status, row.created_at, itemStatus);
 }
 
 function reportJson(row: ReportRow) {
