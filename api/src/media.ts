@@ -1,6 +1,7 @@
 import { isHostOrCoHost } from "./hostControls";
 import type { Env } from "./index";
 import { VISIBLE_TO_VIEWER } from "./moderation";
+import { flagIfSensitive } from "./sensitiveContent";
 
 const UPLOAD_URL_TTL_S = 15 * 60;
 const DOWNLOAD_URL_TTL_S = 15 * 60;
@@ -123,7 +124,7 @@ export async function createPendingItem(
 async function confirmItem(request: Request, env: Env, groupId: string, deviceId: string) {
   const caller = await findCaller(env, groupId, deviceId);
   if (!caller) return new Response("Not found", { status: 404 });
-  const body = await request.json<{ itemId?: unknown }>().catch(() => ({}) as Record<string, unknown>);
+  const body = await request.json<{ itemId?: unknown; sensitive?: unknown }>().catch(() => ({}) as Record<string, unknown>);
   const item = typeof body.itemId === "string"
     ? await env.DB.prepare(
         "SELECT id, bytes, object_key, status FROM items WHERE id = ? AND group_id = ? AND contributor_device_id = ?",
@@ -153,7 +154,10 @@ async function confirmItem(request: Request, env: Env, groupId: string, deviceId
     await env.DB.prepare("UPDATE items SET status = 'pending' WHERE id = ?").bind(item.id).run();
     return new Response("This group's storage is full", { status: 413 });
   }
-  await env.DB.prepare("UPDATE items SET status = 'ready' WHERE id = ?").bind(item.id).run();
+  await env.DB.batch([
+    env.DB.prepare("UPDATE items SET status = 'ready' WHERE id = ?").bind(item.id),
+    ...flagIfSensitive(env, body.sensitive, groupId, item.id, deviceId),
+  ]);
   return Response.json(await itemJson(env, await findItem(env, item.id), new URL(request.url).origin, true), { status: 201 });
 }
 

@@ -25,7 +25,7 @@ public protocol UploadService: Sendable {
     func startUpload(bytes: Int64, contentType: String, in groupID: String) async throws -> MultipartUpload
     func partPlan(itemID: String, in groupID: String) async throws -> PartUploadPlan
     func completeUpload(itemID: String, in groupID: String) async throws
-    func confirmUpload(itemID: String, in groupID: String) async throws -> GalleryItem
+    func confirmUpload(itemID: String, in groupID: String, sensitive: Bool) async throws -> GalleryItem
 }
 
 extension APIClient: UploadService {
@@ -44,7 +44,10 @@ extension APIClient: UploadService {
         _ = try await sendForData("POST", "groups/\(groupID)/multipart/\(itemID)/complete")
     }
 
-    public func confirmUpload(itemID: String, in groupID: String) async throws -> GalleryItem {
-        try await send("POST", "groups/\(groupID)/items", body: try JSONSerialization.data(withJSONObject: ["itemId": itemID]))
+    /// `sensitive`: the on-device analysis flagged it, so the server hides it pending owner review.
+    public func confirmUpload(itemID: String, in groupID: String, sensitive: Bool = false) async throws -> GalleryItem {
+        var body: [String: Any] = ["itemId": itemID]
+        if sensitive { body["sensitive"] = true }
+        return try await send("POST", "groups/\(groupID)/items", body: try JSONSerialization.data(withJSONObject: body))
     }
 }

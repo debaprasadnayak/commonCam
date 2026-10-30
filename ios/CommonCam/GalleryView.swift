@@ -202,6 +202,7 @@ private struct GalleryTile: View {
                 } placeholder: {
                     ProgressView()
                 }
+                .pendingReviewBlur(item.isHidden)
             }
             .clipped()
             .overlay(alignment: .topTrailing) {

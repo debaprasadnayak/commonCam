@@ -126,6 +126,7 @@ struct ReportsSection: View {
                     if let item = report.item {
                         AsyncImage(url: item.downloadUrl) { $0.resizable().scaledToFill() } placeholder: { Color.secondary.opacity(0.15) }
                             .frame(width: 44, height: 44)
+                            .pendingReviewBlur(true)
                             .clipShape(RoundedRectangle(cornerRadius: 6))
                     }
                     VStack(alignment: .leading) {
@@ -146,7 +147,7 @@ struct ReportsSection: View {
         } header: {
             Text(reports.isEmpty ? "Reports" : "Reports (\(reports.count))")
         } footer: {
-            Text("Reported photos are hidden from guests until you restore or delete them.")
+            Text("Reported photos and photos flagged as possibly sensitive on the uploader's phone are hidden from guests until you restore or delete them.")
         }
         .task {
             while !Task.isCancelled {
