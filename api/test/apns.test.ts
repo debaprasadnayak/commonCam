@@ -1,15 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { apnsSender, type ApnsConfig } from "../src/apns";
 import type { Push } from "../src/push";
+import { p8Key } from "./support/apnsKey";
 
 const push: Push = { deviceToken: "ab".repeat(32), groupId: "g-1", kind: "grace1Day", title: "Album deleted tomorrow", body: "Save them." };
-
-async function p8Key() {
-  const pair = (await crypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, true, ["sign", "verify"])) as CryptoKeyPair;
-  const pkcs8 = new Uint8Array((await crypto.subtle.exportKey("pkcs8", pair.privateKey)) as ArrayBuffer);
-  const pem = `-----BEGIN PRIVATE KEY-----\n${btoa(String.fromCharCode(...pkcs8)).replace(/(.{64})/g, "$1\n")}\n-----END PRIVATE KEY-----\n`;
-  return { pem, publicKey: pair.publicKey };
-}
 
 function fromBase64url(s: string) {
   return Uint8Array.from(atob(s.replace(/-/g, "+").replace(/_/g, "/")), (c) => c.charCodeAt(0));

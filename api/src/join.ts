@@ -1,6 +1,7 @@
 import { newMemberStatus } from "./approval";
 import { isHostOrCoHost, isJoiningPaused, joinRefusal } from "./hostControls";
-import { type Env, type GroupRow, toJson } from "./index";
+import { GROUP_SELECT, type GroupRow, toJson } from "./groups";
+import type { Env } from "./index";
 import { normalizePin } from "./pin";
 
 // Placeholders until the app is in App Store Connect and has an Apple team (see notes).
@@ -21,7 +22,6 @@ export interface MemberRow {
 }
 
 export const MEMBER_COLUMNS = "id, display_name, colour, role, status, consent_accepted_at, joined_at";
-const GROUP_COLUMNS = "id, tier, state, people_cap, storage_cap_bytes, storage_used_bytes, starts_at, ends_at";
 
 /** Routes reachable without a device token: what a phone without the app sees after scanning. */
 export function handlePublic(url: URL): Response | null {
@@ -46,7 +46,24 @@ export async function handleJoin(request: Request, url: URL, env: Env, deviceId:
   if (url.pathname === "/join" && request.method === "POST") {
     return join(request, env, deviceId);
   }
+  if (url.pathname === "/memberships" && request.method === "GET") return memberships(env, deviceId);
   return null;
+}
+
+/** `GET /memberships`: the caller's active memberships (any role, incl. Grace groups), newest first, as join returns them. */
+async function memberships(env: Env, deviceId: string): Promise<Response> {
+  const { results: rows } = await env.DB.prepare(
+    `SELECT group_id, ${MEMBER_COLUMNS} FROM members WHERE device_id = ? AND status = 'active' ORDER BY joined_at DESC, rowid DESC`,
+  )
+    .bind(deviceId)
+    .all<MemberRow & { group_id: string }>();
+  const { results: groups } = await env.DB.prepare(
+    `${GROUP_SELECT} WHERE id IN (SELECT group_id FROM members WHERE device_id = ? AND status = 'active')`,
+  )
+    .bind(deviceId)
+    .all<GroupRow>();
+  const byId = new Map(groups.map((group) => [group.id, group]));
+  return Response.json(rows.map((row) => ({ group: toJson(byId.get(row.group_id)!), member: memberJson(row) })));
 }
 
 export async function invite(env: Env, url: URL, groupId: string, deviceId: string): Promise<Response> {
@@ -92,21 +109,22 @@ async function join(request: Request, env: Env, deviceId: string): Promise<Respo
   const pin = normalizePin(body.pin);
   const group =
     typeof body.qrToken === "string"
-      ? await env.DB.prepare(`SELECT ${GROUP_COLUMNS} FROM groups WHERE qr_token = ?`).bind(body.qrToken).first<GroupRow>()
+      ? await env.DB.prepare(`${GROUP_SELECT} WHERE qr_token = ?`).bind(body.qrToken).first<GroupRow>()
       : pin
-        ? await env.DB.prepare(`SELECT ${GROUP_COLUMNS} FROM groups WHERE pin = ?`).bind(pin).first<GroupRow>()
+        ? await env.DB.prepare(`${GROUP_SELECT} WHERE pin = ?`).bind(pin).first<GroupRow>()
         : null;
   if (!group) {
     await recordFailure(env, keys);
     return new Response("Unknown QR code or PIN", { status: 404 });
   }
-  if (group.state !== "Active" || Date.parse(group.ends_at) <= Date.now()) {
-    return new Response("This group is no longer open", { status: 410 });
-  }
-
+  // An active member may always get back in (e.g. to save photos during Grace); new joins need an open group.
   const existing = await env.DB.prepare(`SELECT ${MEMBER_COLUMNS} FROM members WHERE group_id = ? AND device_id = ?`)
     .bind(group.id, deviceId)
     .first<MemberRow>();
+  if (existing?.status === "active") return joinResponse(group, existing, 200);
+  if (group.state !== "Active" || Date.parse(group.ends_at) <= Date.now()) {
+    return new Response("This group is no longer open", { status: 410 });
+  }
   if (existing && existing.status !== "removed" && existing.status !== "banned") {
     return joinResponse(group, existing, 200);
   }

@@ -1,6 +1,6 @@
 import { apnsSender, apnsConfig } from "./apns";
 import type { Env } from "./index";
-import { storageLevel } from "./storageCap";
+import { groupStorageLevel, type GroupStorage } from "./storageCap";
 
 /** SPEC.md section 9 (grace reminders) and section 8 (storage warnings). */
 export type PushKind = "expired" | "grace7Days" | "grace1Day" | "storageNearlyFull" | "storageFull";
@@ -18,15 +18,7 @@ export interface PushSender {
   send(push: Push): Promise<"unregistered" | void>;
 }
 
-let testSender: PushSender | null = null;
-
-/** Worker tests swap in a fake; pass null to restore the real one. */
-export function setPushSenderForTests(sender: PushSender | null) {
-  testSender = sender;
-}
-
 function pushSender(env: Env): PushSender | null {
-  if (testSender) return testSender;
   const config = apnsConfig(env);
   return config && apnsSender(config);
 }
@@ -82,11 +74,11 @@ export async function sendGraceReminders(env: Env, now: number): Promise<void> {
  * deletions) re-arms it.
  */
 export async function syncStorageWarnings(env: Env, groupId: string): Promise<void> {
-  const group = await env.DB.prepare("SELECT storage_used_bytes, storage_cap_bytes FROM groups WHERE id = ?")
+  const group = await env.DB.prepare("SELECT storage_used_bytes, storage_cap_bytes, storage_full FROM groups WHERE id = ?")
     .bind(groupId)
-    .first<{ storage_used_bytes: number; storage_cap_bytes: number }>();
+    .first<GroupStorage>();
   if (!group) return;
-  const level = storageLevel(group.storage_used_bytes, group.storage_cap_bytes);
+  const level = groupStorageLevel(group);
   const rearm: PushKind[] = level === "ok" ? ["storageNearlyFull", "storageFull"] : level === "nearlyFull" ? ["storageFull"] : [];
   if (rearm.length > 0) {
     await env.DB.prepare(`DELETE FROM notifications_sent WHERE group_id = ? AND kind IN (${rearm.map(() => "?").join(", ")})`)

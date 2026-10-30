@@ -13,12 +13,13 @@ export function countGroupCreated(db: D1Database, groupId: string): D1PreparedSt
     .bind(groupId);
 }
 
-/** Counts one confirmed upload of `bytes` into group `groupId`. */
-export function countUpload(db: D1Database, groupId: string, bytes: number): D1PreparedStatement {
+/** Counts the upload of item `itemId`, only while it is being confirmed (status 'confirming', media.ts). */
+export function countUpload(db: D1Database, itemId: string): D1PreparedStatement {
   return db
     .prepare(
-      `INSERT INTO daily_stats (day, tier, uploads, upload_bytes) SELECT date('now'), tier, 1, ?2 FROM groups WHERE id = ?1
+      `INSERT INTO daily_stats (day, tier, uploads, upload_bytes)
+       SELECT date('now'), g.tier, 1, i.bytes FROM items i JOIN groups g ON g.id = i.group_id WHERE i.id = ? AND i.status = 'confirming'
        ON CONFLICT (day, tier) DO UPDATE SET uploads = uploads + 1, upload_bytes = upload_bytes + excluded.upload_bytes`,
     )
-    .bind(groupId, bytes);
+    .bind(itemId);
 }

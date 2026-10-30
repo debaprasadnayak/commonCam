@@ -32,6 +32,7 @@ The app talks to the dev Worker at `https://commoncam-api-dev.dev094u.workers.de
 
 - Products (placeholder prices) are in `ios/CommonCamTests/CommonCam.storekit`, used by the scheme's Run action and by `StoreKitTest` in `TierPurchaserTests`.
 - The API activates a paid group only from an App Store signed transaction that chains to Apple Root CA - G3 (`api/src/appStore.ts`); each transaction id is accepted once. Worker tests use a locally generated stand-in PKI (`api/test/support/fakeAppStore.ts`).
+- The transaction's App Store `environment` must equal `APP_STORE_ENV` in `api/wrangler.jsonc` (otherwise 403). It is `Sandbox` for the dev Worker; set it to `Production` for the launch (production) Worker so Sandbox purchases can't activate real groups.
 - Purchases made against the local `.storekit` file are signed by Xcode, not Apple, so `npm run dev` rejects them (403); the purchase stays unfinished in StoreKit. End-to-end activation needs App Store Connect sandbox products.
 
 ## Continuous integration

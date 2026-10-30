@@ -97,6 +97,15 @@ describe("upgrade credit", () => {
     expect(await orderFor(tx.transactionId)).toMatchObject({ amount_milliunits: 4990, credit_applied: 0 });
   });
 
+  it("still counts an upgraded Taster against the device's free Taster limit", async () => {
+    const { host, group } = await tasterGroup();
+    expect((await purchase(host, group.id, await forGroup(group.id, "app.commoncam.upgrade.taster.pocket", 4990))).status).toBe(200);
+
+    const second = await api("/groups", { method: "POST", token: host, body: JSON.stringify({ tier: "taster" }) });
+
+    expect(second.status).toBe(403);
+  });
+
   it("credits everything already paid towards the tier, but not add-ons", async () => {
     const { host, group } = await paidGroup("pocket");
     await purchase(host, group.id, await forGroup(group.id, "app.commoncam.upgrade.pocket.party", 5000));
@@ -107,6 +116,21 @@ describe("upgrade credit", () => {
 
     expect(res.status).toBe(200);
     expect((await orderFor(tx.transactionId)).credit_applied).toBe(9990);
+  });
+
+  it("does not credit a paid extension towards the tier", async () => {
+    const { host, group } = await paidGroup("pocket");
+    await env.DB.prepare("UPDATE groups SET ends_at = ? WHERE id = ?").bind(new Date(Date.now() - 1000).toISOString(), group.id).run();
+    const extend = await api(`/groups/${group.id}/extend`, {
+      method: "POST",
+      token: host,
+      body: JSON.stringify({ signedTransaction: await forGroup(group.id, "app.commoncam.extension", 2990) }),
+    });
+    expect(extend.status).toBe(200);
+    const tx = transaction({ productId: "app.commoncam.upgrade.pocket.party", price: 5000, appAccountToken: group.id });
+
+    expect((await purchase(host, group.id, await signed(tx))).status).toBe(200);
+    expect((await orderFor(tx.transactionId)).credit_applied).toBe(4990);
   });
 
   it("keeps earlier add-ons on top of the new tier's limits", async () => {

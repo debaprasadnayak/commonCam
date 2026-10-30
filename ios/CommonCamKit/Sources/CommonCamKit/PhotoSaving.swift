@@ -6,6 +6,8 @@ public protocol PhotoLibrary: Sendable {
     func requestAddAccess() async -> Bool
     /// Adds one encoded photo (HEIC/JPEG) as a new asset.
     func addPhoto(_ data: Data) async throws
+    /// Adds one QuickTime clip as a new asset.
+    func addVideo(_ data: Data) async throws
 }
 
 public struct BulkSaveProgress: Equatable, Sendable {
@@ -33,7 +35,8 @@ public struct BulkSaveReport: Equatable, Sendable {
 }
 
 /// Saves photos to the device's own Photos library: shared-gallery items (one or many) and fresh captures. Photos
-/// with a filter recipe are saved as their filtered version (the item detail view can still save the original).
+/// with a filter recipe are saved as their filtered version (the item detail view can still save the original),
+/// except in a bulk save of originals (SPEC.md section 9.2).
 public struct PhotoSaver: Sendable {
     private let library: PhotoLibrary
     private let download: @Sendable (URL) async throws -> Data
@@ -45,8 +48,9 @@ public struct PhotoSaver: Sendable {
     }
 
     /// Saves items one at a time (keeps memory flat for big batches), carrying on past individual failures.
+    /// With `originals`, photos are saved untouched (no filter render); videos are always saved as they are.
     public func save(
-        _ items: [GalleryItem], progress: @Sendable (BulkSaveProgress) async -> Void = { _ in }
+        _ items: [GalleryItem], originals: Bool = false, progress: @Sendable (BulkSaveProgress) async -> Void = { _ in }
     ) async -> BulkSaveReport {
         guard await library.requestAddAccess() else {
             return BulkSaveReport(saved: [], failed: items.map(\.id), accessDenied: true)
@@ -55,7 +59,12 @@ public struct PhotoSaver: Sendable {
         var failed: [String] = []
         for (index, item) in items.enumerated() {
             do {
-                try await library.addPhoto(Self.filtered(try await download(item.downloadUrl), with: item.filterRecipe))
+                let data = try await download(item.downloadUrl)
+                if item.isVideo {
+                    try await library.addVideo(data)
+                } else {
+                    try await library.addPhoto(originals ? data : Self.filtered(data, with: item.filterRecipe))
+                }
                 saved.append(item.id)
             } catch {
                 failed.append(item.id)

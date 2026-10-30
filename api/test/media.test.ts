@@ -167,6 +167,25 @@ describe("POST /groups/:id/items (confirm)", () => {
 
     expect((await confirm(guest, group.id, ticket.itemId)).status).toBe(413);
   });
+
+  it("leaves nothing half-done when a confirm fails midway, so a retry succeeds and charges once", async () => {
+    const { group, host, guest } = await groupWithGuest("midway");
+    const ticket = await (await requestUpload(guest, group.id, 300)).json<any>();
+    await api(ticket.uploadUrl, { method: "PUT", body: fakeHeic(300) });
+    // Simulates the Worker or D1 failing as the item is made ready.
+    await env.DB.prepare(
+      "CREATE TRIGGER fail_ready BEFORE UPDATE OF status ON items WHEN NEW.status = 'ready' BEGIN SELECT RAISE(ABORT, 'boom'); END",
+    ).run();
+    try {
+      await expect(confirm(guest, group.id, ticket.itemId)).rejects.toThrow();
+    } finally {
+      await env.DB.prepare("DROP TRIGGER fail_ready").run();
+    }
+
+    expect((await confirm(guest, group.id, ticket.itemId)).status).toBe(201);
+    const [mine] = await (await api("/groups", { token: host })).json<any[]>();
+    expect(mine.storageUsedBytes).toBe(300);
+  });
 });
 
 describe("GET /groups/:id/items", () => {

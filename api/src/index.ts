@@ -1,7 +1,7 @@
 import { countGroupCreated } from "./analytics";
 import { handleApproval } from "./approval";
 import { handleDeleteItem } from "./deleteItem";
-import { insertTasterGroup, newGroupRow, toJson, type GroupRow } from "./groups";
+import { GROUP_SELECT, insertTasterGroup, newGroupRow, toJson, type GroupRow } from "./groups";
 import { handleExtension } from "./extension";
 import { handleHostControls } from "./hostControls";
 import { handleJoin, handlePublic } from "./join";
@@ -23,6 +23,8 @@ export interface Env {
   /** DER base64 of the root App Store transactions must chain to (Apple Root CA - G3). */
   APPLE_ROOT_CA_G3: string;
   APPLE_BUNDLE_ID: string;
+  /** App Store environment purchases must come from: "Sandbox" (dev Worker) or "Production" (launch). */
+  APP_STORE_ENV: string;
   /** Days a group stays read-only after its paid period before server media is deleted (wrangler `vars`). */
   GRACE_DAYS: string;
   /** APNs token auth (push.ts / apns.ts). Unset → pushes are skipped with a log line. APNS_PRIVATE_KEY is a secret (.p8 PEM). */
@@ -61,10 +63,7 @@ export default {
     }
 
     if (url.pathname === "/groups" && request.method === "GET") {
-      const { results } = await env.DB.prepare(
-        `SELECT id, tier, state, people_cap, storage_cap_bytes, storage_used_bytes, starts_at, ends_at, grace_ends_at
-         FROM groups WHERE host_device_id = ? ORDER BY starts_at DESC`,
-      )
+      const { results } = await env.DB.prepare(`${GROUP_SELECT} WHERE host_device_id = ? ORDER BY starts_at DESC`)
         .bind(deviceId)
         .all<GroupRow>();
       return Response.json(results.map(toJson));

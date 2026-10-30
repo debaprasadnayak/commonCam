@@ -54,6 +54,15 @@ export function upgradeIncrease(from: Tier, to: PaidTier): LimitIncrease {
   };
 }
 
+/**
+ * Products that pay towards a group's tier, so an upgrade credits them: tier purchases and upgrades.
+ * Add-ons and the paid extension are not credited.
+ */
+export const TIER_CREDIT_PRODUCT_IDS: readonly string[] = TIER_ORDER.flatMap((from, i) => [
+  ...(TIERS[from].productId ? [TIERS[from].productId] : []),
+  ...TIER_ORDER.slice(i + 1).map((to) => upgradeProductId(from, to as PaidTier)),
+]);
+
 /** Consumable add-ons for paid groups; priced so two or more approach the next tier (SPEC.md section 7). */
 export const ADD_ONS = {
   day: { productId: "app.commoncam.addon.day", peopleCap: 0, days: 1, storageCapBytes: 0 },

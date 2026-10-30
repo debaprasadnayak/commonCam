@@ -117,20 +117,20 @@ struct GalleryView: View {
 
     private func saveAll() async {
         await reload() // fresh download URLs: they expire after 15 minutes
-        await save(items.filter { !$0.isVideo })
+        await save(items, originals: true) // SPEC.md section 9.2: bulk-downloading originals, videos included
     }
 
-    private func save(_ toSave: [GalleryItem]) async {
+    private func save(_ toSave: [GalleryItem], originals: Bool = false) async {
         saveNotice = nil
         saveProgress = BulkSaveProgress(done: 0, total: toSave.count)
-        let report = await PhotoSaver.live.save(toSave) { progress in
+        let report = await PhotoSaver.live.save(toSave, originals: originals) { progress in
             await MainActor.run { saveProgress = progress }
         }
         saveProgress = nil
         saveNotice = if report.accessDenied {
             PhotosAccessMessage.denied
         } else if report.failed.isEmpty {
-            "Saved \(report.saved.count) photo\(report.saved.count == 1 ? "" : "s") to Photos."
+            "Saved \(report.saved.count) item\(report.saved.count == 1 ? "" : "s") to Photos."
         } else {
             "Saved \(report.saved.count) of \(toSave.count) to Photos; \(report.failed.count) couldn't be saved. Try those again."
         }

@@ -50,6 +50,22 @@ describe("POST /groups/:id/pin", () => {
     expect((await enablePin("someone-else", group.id)).status).toBe(404);
     expect((await pinFor("someone-else", group.id)).status).toBe(404);
   });
+
+  it("is also for a co-host the host promoted, but not for other guests", async () => {
+    const group = await createGroup("host-pin-cohost");
+    const { qrToken } = await (await api(`/groups/${group.id}/invite`, { token: "host-pin-cohost" })).json<any>();
+    const join = (token: string) =>
+      api("/join", { method: "POST", token, body: JSON.stringify({ qrToken, ...consentingGuest }) }).then((r) => r.json<any>());
+    const { member } = await join("cohost-pin");
+    await join("guest-pin");
+    await api(`/groups/${group.id}/members/${member.id}/co-host`, { method: "POST", token: "host-pin-cohost" });
+
+    const res = await enablePin("cohost-pin", group.id);
+
+    expect(res.status).toBe(200);
+    expect(await (await pinFor("host-pin-cohost", group.id)).json()).toEqual(await res.json());
+    expect((await pinFor("guest-pin", group.id)).status).toBe(404);
+  });
 });
 
 function join(guest: string, body: object, ip = "203.0.113.50") {

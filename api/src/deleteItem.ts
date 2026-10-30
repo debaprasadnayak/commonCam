@@ -34,7 +34,7 @@ export async function deleteItem(env: Env, groupId: string, itemId: string): Pro
   // One transaction: usage drops only if this request is the one that removes the row, and never below zero.
   await env.DB.batch([
     env.DB.prepare(
-      `UPDATE groups SET storage_used_bytes = MAX(0, storage_used_bytes -
+      `UPDATE groups SET storage_full = 0, storage_used_bytes = MAX(0, storage_used_bytes -
          (SELECT bytes FROM items WHERE id = ?2 AND group_id = ?1 AND status = 'ready'))
        WHERE id = ?1 AND EXISTS (SELECT 1 FROM items WHERE id = ?2 AND group_id = ?1 AND status = 'ready')`,
     ).bind(groupId, itemId),
