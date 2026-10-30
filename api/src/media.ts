@@ -158,26 +158,27 @@ async function confirmItem(request: Request, env: Env, groupId: string, deviceId
   const stored = await env.MEDIA.head(item.object_key);
   if (!stored || stored.size !== item.bytes) return new Response("Upload not found", { status: 409 });
 
-  // Claim the item, then charge storage only if it still fits; concurrent confirms cannot overshoot the cap.
-  const claim = await env.DB.prepare("UPDATE items SET status = 'confirming' WHERE id = ? AND status = 'pending'")
-    .bind(item.id)
-    .run();
-  if (claim.meta.changes === 0) return new Response("Already being confirmed", { status: 409 });
-  const charge = await env.DB.prepare(
-    `UPDATE groups SET storage_used_bytes = storage_used_bytes + ?1
-     WHERE id = ?2 AND storage_used_bytes + ?1 <= storage_cap_bytes`,
-  )
-    .bind(item.bytes, groupId)
-    .run();
-  if (charge.meta.changes === 0) {
-    await env.DB.prepare("UPDATE items SET status = 'pending' WHERE id = ?").bind(item.id).run();
+  // One D1 transaction: the item is claimed ('confirming') only if it is pending and still fits, and every
+  // later statement runs only for a claimed item, so concurrent confirms cannot overshoot the cap and a
+  // failure leaves the item pending and storage uncharged.
+  const [claim] = await env.DB.batch([
+    env.DB.prepare(
+      `UPDATE items SET status = 'confirming', filter_recipe = ?3 WHERE id = ?1 AND status = 'pending'
+       AND EXISTS (SELECT 1 FROM groups WHERE id = ?2 AND storage_used_bytes + items.bytes <= storage_cap_bytes)`,
+    ).bind(item.id, groupId, recipe && JSON.stringify(recipe)),
+    env.DB.prepare(
+      `UPDATE groups SET storage_used_bytes = storage_used_bytes + ?1
+       WHERE id = ?2 AND EXISTS (SELECT 1 FROM items WHERE id = ?3 AND status = 'confirming')`,
+    ).bind(item.bytes, groupId, item.id),
+    ...flagIfSensitive(env, body.sensitive, groupId, item.id, deviceId),
+    countUpload(env.DB, item.id),
+    env.DB.prepare("UPDATE items SET status = 'ready' WHERE id = ? AND status = 'confirming'").bind(item.id),
+  ]);
+  if (claim.meta.changes === 0) {
+    const status = await env.DB.prepare("SELECT status FROM items WHERE id = ?").bind(item.id).first<string>("status");
+    if (status !== "pending") return new Response("Already being confirmed", { status: 409 });
     return new Response("This group's storage is full", { status: 413 });
   }
-  await env.DB.batch([
-    env.DB.prepare("UPDATE items SET status = 'ready', filter_recipe = ? WHERE id = ?").bind(recipe && JSON.stringify(recipe), item.id),
-    ...flagIfSensitive(env, body.sensitive, groupId, item.id, deviceId),
-    countUpload(env.DB, groupId, item.bytes),
-  ]);
   await syncStorageWarnings(env, groupId);
   return Response.json(await itemJson(env, await findItem(env, item.id), new URL(request.url).origin, true), { status: 201 });
 }
