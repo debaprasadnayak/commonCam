@@ -45,13 +45,9 @@ final class TierPurchaser {
         }
     }
 
-    /// Activates purchases whose earlier activation failed (e.g. offline). Call on launch.
-    func activateUnfinished() async -> [EventGroup] {
-        var groups: [EventGroup] = []
-        for await verification in Transaction.unfinished {
-            if let group = try? await activateAndFinish(verification) { groups.append(group) }
-        }
-        return groups
+    /// `PurchaseRouter` handler: activates a tier purchase that arrived outside `purchase(_:)`; nil for other products.
+    func handle(_ verification: VerificationResult<Transaction>) async -> EventGroup? {
+        (try? await activateAndFinish(verification)) ?? nil
     }
 
     private func activateAndFinish(_ verification: VerificationResult<Transaction>) async throws -> EventGroup? {

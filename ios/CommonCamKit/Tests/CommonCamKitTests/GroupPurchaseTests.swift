@@ -3,7 +3,7 @@ import Testing
 @testable import CommonCamKit
 
 private let upgradedJSON = """
-{"id":"g1","tier":"festival","state":"Active","peopleCap":75,"storageCapBytes":107374182400,"storageUsedBytes":0,
+{"id":"g1","tier":"festival","state":"Active","peopleCap":75,"storageCapBytes":107374182400,"storageUsedBytes":0,"storageLevel":"ok",
  "startsAt":"2026-10-30T08:00:00.000Z","endsAt":"2026-11-09T08:00:00.000Z"}
 """
 

@@ -34,13 +34,13 @@ final class GroupExtenderTests: StoreKitTestCase {
         XCTAssertEqual(unfinished, 0)
     }
 
-    func testAnExtensionTheAPIRejectedIsRedeemedLaterForTheSameGroup() async throws {
+    func testAnExtensionTheAPIRejectedIsRedeemedLaterThroughThePurchaseRouter() async throws {
         // e.g. 400 "not ended yet" or offline: the payment stays unfinished.
         _ = try? await extender(failingWith: APIError(statusCode: 400)).purchase(for: groupID)
         let unfinishedAfterFailure = await unfinishedCount(settlingAt: 1)
         XCTAssertEqual(unfinishedAfterFailure, 1)
 
-        let groups = await extender().extendUnfinished()
+        let groups = await PurchaseRouter(handlers: [extender().handle]).processUnfinished()
 
         XCTAssertEqual(groups.map(\.id), [groupID])
         XCTAssertEqual(extensions.map(\.groupID), [groupID])
@@ -57,7 +57,7 @@ final class GroupExtenderTests: StoreKitTestCase {
         let unfinishedAfterFailure = await unfinishedCount(settlingAt: 1)
         XCTAssertEqual(unfinishedAfterFailure, 1)
 
-        let groups = await extender().extendUnfinished()
+        let groups = await PurchaseRouter(handlers: [extender().handle]).processUnfinished()
 
         XCTAssertEqual(groups, [])
         XCTAssertTrue(extensions.isEmpty)

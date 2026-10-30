@@ -7,7 +7,7 @@ private let groupID = "0b6f7c1e-3a5d-4c2e-9f10-5d2b8a7e4c11"
 private func groupJSON(state: String, graceEndsAt: String?) -> Data {
     let grace = graceEndsAt.map { "\"\($0)\"" } ?? "null"
     return Data("""
-    {"id":"\(groupID)","tier":"taster","state":"\(state)","peopleCap":4,"storageCapBytes":1073741824,"storageUsedBytes":0,
+    {"id":"\(groupID)","tier":"taster","state":"\(state)","peopleCap":4,"storageCapBytes":1073741824,"storageUsedBytes":0,"storageLevel":"ok",
      "startsAt":"2026-10-30T08:00:00.000Z","endsAt":"2026-10-31T08:00:00.000Z","graceEndsAt":\(grace)}
     """.utf8)
 }
@@ -20,6 +20,7 @@ extension APIClientTests {
         let group = try #require(try await client.myGroups().first)
 
         #expect(group.isReadOnly)
+        #expect(group.canExtend)
         #expect(group.graceEndsAt == Date(timeIntervalSince1970: 1_794_643_200))
     }
 
@@ -29,7 +30,17 @@ extension APIClientTests {
         let group = try #require(try await client.myGroups().first)
 
         #expect(!group.isReadOnly)
+        #expect(!group.canExtend)
         #expect(group.graceEndsAt == nil)
+    }
+
+    @Test func aDeletedGroupIsReadOnlyAndCannotBeExtended() async throws {
+        StubURLProtocol.responseBody = Data("[\(String(decoding: groupJSON(state: "Deleted", graceEndsAt: nil), as: UTF8.self))]".utf8)
+
+        let group = try #require(try await client.myGroups().first)
+
+        #expect(group.isReadOnly)
+        #expect(!group.canExtend)
     }
 
     @Test func extendsAGroupWithTheSignedTransaction() async throws {

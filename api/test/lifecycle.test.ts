@@ -119,7 +119,9 @@ async function busyGroup(prefix: string) {
 describe("expiry: Active → Grace", () => {
   it("moves a group whose paid period has ended into Grace for 14 days; it stays readable but takes no uploads", async () => {
     const host = `grace-${crypto.randomUUID()}`;
+    const guest = `grace-guest-${crypto.randomUUID()}`;
     const group = await newGroup(host);
+    await join(guest, group.id, host);
     const item = await share(host, group.id, 50);
     const late = await (
       await api(`/groups/${group.id}/uploads`, { method: "POST", token: host, body: JSON.stringify({ bytes: 5, contentType: "image/heic" }) })
@@ -135,6 +137,15 @@ describe("expiry: Active → Grace", () => {
     const gallery = await (await api(`/groups/${group.id}/items`, { token: host })).json<any[]>();
     expect(gallery.map((i) => i.id)).toEqual([item.id]);
     expect((await api(gallery[0].downloadUrl)).status).toBe(200);
+    const guestGallery = await (await api(`/groups/${group.id}/items`, { token: guest })).json<any[]>();
+    expect(guestGallery.map((i) => i.id)).toEqual([item.id]);
+    expect((await api(guestGallery[0].downloadUrl)).status).toBe(200);
+    const guestUpload = await api(`/groups/${group.id}/uploads`, {
+      method: "POST",
+      token: guest,
+      body: JSON.stringify({ bytes: 10, contentType: "image/heic" }),
+    });
+    expect(guestUpload.status).toBe(410);
 
     const upload = await api(`/groups/${group.id}/uploads`, {
       method: "POST",

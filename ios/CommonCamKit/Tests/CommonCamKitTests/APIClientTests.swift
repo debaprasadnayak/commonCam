@@ -38,7 +38,7 @@ final class StubURLProtocol: URLProtocol {
 }
 
 private let groupJSON = """
-{"id":"g1","tier":"taster","state":"Active","peopleCap":4,"storageCapBytes":1073741824,"storageUsedBytes":0,
+{"id":"g1","tier":"taster","state":"Active","peopleCap":4,"storageCapBytes":1073741824,"storageUsedBytes":0,"storageLevel":"ok",
  "startsAt":"2026-10-30T08:00:00.000Z","endsAt":"2026-10-31T08:00:00.000Z"}
 """
 

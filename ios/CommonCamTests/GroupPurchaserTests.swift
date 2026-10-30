@@ -55,7 +55,7 @@ final class GroupPurchaserTests: StoreKitTestCase {
         let unfinishedAfterFailure = await unfinishedCount(settlingAt: 1)
         XCTAssertEqual(unfinishedAfterFailure, 1)
 
-        let groups = await purchaser().applyUnfinished()
+        let groups = await PurchaseRouter(handlers: [purchaser().handle]).processUnfinished()
 
         XCTAssertEqual(groups.map(\.id), [groupID])
         XCTAssertEqual(applied.map(\.groupID), [groupID])
@@ -68,7 +68,7 @@ final class GroupPurchaserTests: StoreKitTestCase {
         let unfinishedAfterFailure = await unfinishedCount(settlingAt: 1)
         XCTAssertEqual(unfinishedAfterFailure, 1)
 
-        let groups = await purchaser().applyUnfinished()
+        let groups = await PurchaseRouter(handlers: [purchaser().handle]).processUnfinished()
 
         XCTAssertEqual(groups, [])
         XCTAssertTrue(applied.isEmpty)

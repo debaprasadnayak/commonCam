@@ -46,13 +46,10 @@ final class GroupExtender {
         }
     }
 
-    /// Redeems extensions whose earlier request failed (e.g. offline). Call on launch.
-    func extendUnfinished() async -> [EventGroup] {
-        var groups: [EventGroup] = []
-        for await verification in StoreKit.Transaction.unfinished where verification.unsafePayloadValue.productID == GroupExtension.productID {
-            if let group = try? await extendAndFinish(verification) { groups.append(group) }
-        }
-        return groups
+    /// `PurchaseRouter` handler: redeems an extension that arrived outside `purchase(for:)` (e.g. an earlier
+    /// request failed offline, or was refused because the group had not ended yet); nil for other products.
+    func handle(_ verification: VerificationResult<StoreKit.Transaction>) async -> EventGroup? {
+        (try? await extendAndFinish(verification)) ?? nil
     }
 
     private func extendAndFinish(_ verification: VerificationResult<StoreKit.Transaction>) async throws -> EventGroup? {
@@ -90,8 +87,12 @@ struct GraceSection: View {
             if let graceEndsAt = group.graceEndsAt {
                 Text("Read-only. Save what you want before \(graceEndsAt.formatted(date: .abbreviated, time: .shortened)); after that the photos and videos are deleted from our servers.")
             }
-            Button("Extend 7 days \(product.map { "for \($0.displayPrice)" } ?? "")") { Task { await buy() } }
-                .disabled(product == nil || isBuying)
+            if group.canExtend {
+                Button("Extend 7 days \(product.map { "for \($0.displayPrice)" } ?? "")") { Task { await buy() } }
+                    .disabled(product == nil || isBuying)
+            } else {
+                Text("This group's photos and videos have been deleted from our servers.")
+            }
             if let errorMessage { Text(errorMessage).foregroundStyle(.red) }
         }
         .task { product = try? await extender.product() }

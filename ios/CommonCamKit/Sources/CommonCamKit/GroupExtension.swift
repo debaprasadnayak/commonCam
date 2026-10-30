@@ -18,6 +18,9 @@ public enum GroupExtension {
 extension EventGroup {
     /// Uploads are refused (Grace or Deleted); downloads keep working until the grace period ends.
     public var isReadOnly: Bool { state != "Active" }
+
+    /// Only a Grace group can be bought back; a Deleted group's media is gone (the API answers 410).
+    public var canExtend: Bool { state == "Grace" }
 }
 
 extension APIClient {
