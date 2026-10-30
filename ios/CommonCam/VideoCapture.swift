@@ -7,6 +7,8 @@ import SwiftUI
 /// Writes one HEVC clip from the camera's video and audio sample buffers with AVAssetWriter.
 /// Every method runs on the camera's frames queue. `ClipRecording` decides which samples belong to the clip,
 /// so the clip ends by itself at 60 s; the file is network-optimised (index first) so it streams from the gallery.
+/// A filter chosen at `start` is baked into every frame (#8) with the same `FilterRenderer` as the preview; it is
+/// fixed for the whole clip.
 final class VideoRecorder: @unchecked Sendable {
     enum Failure: LocalizedError {
         case noFrames, writeFailed
@@ -22,12 +24,15 @@ final class VideoRecorder: @unchecked Sendable {
         let file: URL
         let videoSettings: [String: Any]?
         let audioSettings: [String: Any]?
+        let recipe: FilterRecipe?
+        let faceTracker: FaceTracker?
         let progress: @Sendable (TimeInterval) -> Void
         let completion: @Sendable (Result<CapturedVideo, Error>) -> Void
         var clip = ClipRecording()
         var writer: AVAssetWriter?
         var video: AVAssetWriterInput?
         var audio: AVAssetWriterInput?
+        var filtered: AVAssetWriterInputPixelBufferAdaptor?
         var lastReportedSecond: Int?
     }
 
@@ -42,11 +47,16 @@ final class VideoRecorder: @unchecked Sendable {
         file: URL,
         videoSettings: [String: Any]?,
         audioSettings: [String: Any]?,
+        recipe: FilterRecipe?,
         progress: @escaping @Sendable (TimeInterval) -> Void,
         completion: @escaping @Sendable (Result<CapturedVideo, Error>) -> Void
     ) {
         guard session == nil else { return completion(.failure(Failure.writeFailed)) }
-        session = Session(file: file, videoSettings: videoSettings, audioSettings: audioSettings, progress: progress, completion: completion)
+        let usesFaces = recipe.flatMap { FilterCatalog.definition(id: $0.id) }?.usesFaces == true
+        session = Session(
+            file: file, videoSettings: videoSettings, audioSettings: audioSettings, recipe: recipe,
+            faceTracker: usesFaces ? FaceTracker() : nil, progress: progress, completion: completion
+        )
         lock.withLock { recording = true }
     }
 
@@ -69,7 +79,13 @@ final class VideoRecorder: @unchecked Sendable {
             }
         }
         if let input = current.video, input.isReadyForMoreMediaData {
-            input.append(sample)
+            if let adaptor = current.filtered {
+                if let pixels = sample.imageBuffer, let rendered = Self.render(pixels, with: current, into: adaptor) {
+                    adaptor.append(rendered, withPresentationTime: time)
+                }
+            } else {
+                input.append(sample)
+            }
         }
         let remaining = current.clip.remaining(at: time.seconds)
         let second = Int(remaining.rounded(.up))
@@ -100,6 +116,14 @@ final class VideoRecorder: @unchecked Sendable {
         video.expectsMediaDataInRealTime = true
         guard writer.canAdd(video) else { return false }
         writer.add(video)
+        if current.recipe != nil {
+            current.filtered = AVAssetWriterInputPixelBufferAdaptor(assetWriterInput: video, sourcePixelBufferAttributes: [
+                kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
+                kCVPixelBufferWidthKey as String: Int(size.width),
+                kCVPixelBufferHeightKey as String: Int(size.height),
+                kCVPixelBufferIOSurfacePropertiesKey as String: [String: Any](),
+            ])
+        }
         if let audioSettings = current.audioSettings {
             let audio = AVAssetWriterInput(mediaType: .audio, outputSettings: audioSettings)
             audio.expectsMediaDataInRealTime = true
@@ -113,6 +137,21 @@ final class VideoRecorder: @unchecked Sendable {
         current.writer = writer
         current.video = video
         return true
+    }
+
+    /// The frame with the clip's filter applied, in a buffer from the writer's pool. A frame that can't be
+    /// rendered is written as shot rather than dropped, so the clip has no gaps.
+    private static func render(
+        _ pixels: CVPixelBuffer, with current: Session, into adaptor: AVAssetWriterInputPixelBufferAdaptor
+    ) -> CVPixelBuffer? {
+        guard let pool = adaptor.pixelBufferPool else { return nil }
+        var output: CVPixelBuffer?
+        guard CVPixelBufferPoolCreatePixelBuffer(nil, pool, &output) == kCVReturnSuccess, let output else { return nil }
+        let frame = CIImage(cvPixelBuffer: pixels)
+        let faces = current.faceTracker?.faces(updatingFrom: frame)
+        let image = (try? FilterRenderer.apply(current.recipe, to: frame, faces: faces)) ?? frame
+        FilterRenderer.context.render(image, to: output, bounds: frame.extent, colorSpace: CGColorSpace(name: CGColorSpace.sRGB))
+        return output
     }
 
     private func finish() {
@@ -142,6 +181,8 @@ final class VideoRecorder: @unchecked Sendable {
 /// Record / stop button with the time left in the clip. Recording also stops by itself at 60 s.
 struct VideoShutter: View {
     let camera: Camera
+    /// Baked into the clip; taken when recording starts, so it can't change mid-clip.
+    let recipe: FilterRecipe?
     @Binding var isRecording: Bool
     let onRecord: (CapturedVideo) -> Void
     let onError: (String) -> Void
@@ -173,7 +214,7 @@ struct VideoShutter: View {
         remaining = ClipRecording.maxDuration
         Task {
             do {
-                let clip = try await camera.record { left in
+                let clip = try await camera.record(recipe: recipe) { left in
                     Task { @MainActor in remaining = left }
                 }
                 onRecord(clip)
@@ -283,6 +324,30 @@ enum VideoSaver {
     /// The fresh-capture safety net, honouring the same "Save my photos to Photos" setting as photos.
     static func autoSave(_ clip: CapturedVideo, enabled: Bool) async -> AutoSaveOutcome {
         enabled ? await save(clip.file) : .off
+    }
+}
+
+/// States plainly whether the next clip gets a filter: video filters are baked in and can't be removed later.
+struct VideoFilterChoice: View {
+    let filter: FilterDefinition?
+    let isRecording: Bool
+
+    var body: some View {
+        Label(text, systemImage: isRecording ? "lock.fill" : filter == nil ? "circle.slash" : "camera.filters")
+            .font(.footnote.weight(.semibold))
+            .foregroundStyle(.white)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 4)
+            .background(.black.opacity(0.5), in: Capsule())
+    }
+
+    private var text: String {
+        switch (filter, isRecording) {
+        case (nil, false): "Filter off"
+        case (nil, true): "Filter off for this clip"
+        case (let filter?, false): "Filter on: \(filter.name), baked into the video"
+        case (let filter?, true): "\(filter.name) locked for this clip"
+        }
     }
 }
 
