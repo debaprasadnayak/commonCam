@@ -80,8 +80,9 @@ final class Camera: NSObject, @unchecked Sendable {
         }
     }
 
-    /// Records until `stopRecording()` or the 60 s cap; `progress` gets the seconds left in the clip.
-    func record(progress: @escaping @Sendable (TimeInterval) -> Void) async throws -> CapturedVideo {
+    /// Records until `stopRecording()` or the 60 s cap, with `recipe` baked into every frame (nil = unfiltered);
+    /// `progress` gets the seconds left in the clip.
+    func record(recipe: FilterRecipe?, progress: @escaping @Sendable (TimeInterval) -> Void) async throws -> CapturedVideo {
         let file = FileManager.default.temporaryDirectory.appending(path: "\(UUID().uuidString).\(CapturedVideo.fileExtension)")
         return try await withCheckedThrowingContinuation { continuation in
             framesQueue.async { [self] in
@@ -89,6 +90,7 @@ final class Camera: NSObject, @unchecked Sendable {
                     file: file,
                     videoSettings: frames.recommendedVideoSettings(forVideoCodecType: .hevc, assetWriterOutputFileType: .mov),
                     audioSettings: microphone == nil ? nil : audio.recommendedAudioSettingsForAssetWriter(writingTo: .mov),
+                    recipe: recipe,
                     progress: progress,
                     completion: { continuation.resume(with: $0) }
                 )
@@ -204,8 +206,8 @@ struct CameraScreen: View {
                 ContentUnavailableView("Camera unavailable", systemImage: "camera.fill", description: Text(problem))
                     .foregroundStyle(.white)
             } else {
-                // Video filters (baked in) come with #8; until then clips are recorded and previewed unfiltered.
-                FilteredPreview(frames: camera.latestFrame, recipe: isVideo ? nil : filter?.recipe()).ignoresSafeArea()
+                // Photos keep the original plus a recipe; video bakes the same look into the clip (#8).
+                FilteredPreview(frames: camera.latestFrame, recipe: filter?.recipe()).ignoresSafeArea()
             }
             VStack {
                 HStack {
@@ -217,7 +219,11 @@ struct CameraScreen: View {
                     CaptureModePicker(isVideo: $isVideo).disabled(!isReady || isRecording)
                 }
                 if problem == nil && isVideo {
-                    VideoShutter(camera: camera, isRecording: $isRecording, onRecord: onRecord) { problem = $0 }
+                    VideoFilterChoice(filter: filter, isRecording: isRecording)
+                    FilterPicker(selection: $filter).disabled(isRecording)
+                    VideoShutter(camera: camera, recipe: filter?.recipe(), isRecording: $isRecording, onRecord: onRecord) {
+                        problem = $0
+                    }
                         .disabled(!isReady)
                         .padding(.bottom, 30)
                 } else if problem == nil {
