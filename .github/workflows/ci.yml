@@ -27,13 +27,18 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
+      # The project and .storekit file are authored in Xcode 27; the image default is older.
+      - name: Select newest Xcode
+        run: |
+          sudo xcode-select -s "$(ls -d /Applications/Xcode_*.app | sort -V | tail -1)"
+          xcodebuild -version
       - name: Swift package tests
         working-directory: ios/CommonCamKit
         run: swift test
       - name: App tests (simulator)
         working-directory: ios
         run: |
-          DEVICE_ID=$(xcrun simctl list devices available -j | jq -r '[.devices[][] | select(.name | startswith("iPhone"))][0].udid')
+          DEVICE_ID=$(xcrun simctl list devices available -j | jq -r '[.devices | to_entries | map(select(.key | contains("iOS"))) | sort_by(.key | [scan("[0-9]+") | tonumber]) | last.value[] | select(.name | startswith("iPhone"))][0].udid')
           xcodebuild test -project CommonCam.xcodeproj -scheme CommonCam -destination "id=$DEVICE_ID"
 
   deploy-dev:
