@@ -18,7 +18,9 @@ public enum FilterRenderer {
     ])
 
     /// The filtered image, same extent as `image`. `nil` recipe = the original.
-    public static func apply(_ recipe: FilterRecipe?, to image: CIImage) throws -> CIImage {
+    /// Face-based looks use `faces` when given (the live preview tracks them on its own schedule), otherwise they
+    /// find the faces in `image` now, so a stored recipe needs nothing but the original.
+    public static func apply(_ recipe: FilterRecipe?, to image: CIImage, faces: [DetectedFace]? = nil) throws -> CIImage {
         guard let recipe else { return image }
         guard let filter = FilterCatalog.definition(id: recipe.id) else { throw Failure.unknownFilter(recipe.id) }
         guard (1...filter.version).contains(recipe.version) else {
@@ -26,7 +28,8 @@ public enum FilterRenderer {
         }
         let params = filter.defaults.merging(recipe.params) { $1 }
         let intensity = min(max(params["intensity"] ?? 1, 0), 1)
-        let look = filter.apply(image, params, recipe.version).cropped(to: image.extent)
+        let faces = filter.usesFaces ? faces ?? FaceDetector.detect(in: image) : []
+        let look = filter.apply(image, params, recipe.version, faces).cropped(to: image.extent)
         return image
             .applyingFilter("CIDissolveTransition", parameters: [kCIInputTargetImageKey: look, kCIInputTimeKey: intensity])
             .cropped(to: image.extent)

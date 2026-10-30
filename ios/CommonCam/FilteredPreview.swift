@@ -17,6 +17,32 @@ final class LatestFrame: @unchecked Sendable {
     }
 }
 
+/// Finds faces in preview frames for the face-based looks, off the draw loop and one frame at a time: the preview
+/// keeps drawing at full rate with the most recent faces while the next detection runs.
+final class FaceTracker: @unchecked Sendable {
+    private let lock = NSLock()
+    private let queue = DispatchQueue(label: "commonCam.preview.faces", qos: .userInitiated)
+    private var faces: [DetectedFace] = []
+    private var isDetecting = false
+
+    /// The latest faces found, and starts looking in `frame` unless a detection is already running.
+    func faces(updatingFrom frame: CIImage) -> [DetectedFace] {
+        lock.withLock {
+            if !isDetecting {
+                isDetecting = true
+                queue.async { [self] in
+                    let found = FaceDetector.detect(in: frame)
+                    lock.withLock {
+                        faces = found
+                        isDetecting = false
+                    }
+                }
+            }
+            return faces
+        }
+    }
+}
+
 /// Live viewfinder with the chosen filter applied on the GPU: Core Image renders straight into a Metal drawable
 /// on the display link, at the camera's frame rate, using the same `FilterRenderer` as the gallery and saving.
 struct FilteredPreview: UIViewRepresentable {
@@ -47,6 +73,7 @@ struct FilteredPreview: UIViewRepresentable {
         let device = MTLCreateSystemDefaultDevice()
         let frames: LatestFrame
         var recipe: FilterRecipe?
+        private let faceTracker = FaceTracker()
         private let queue: MTLCommandQueue?
         private let context: CIContext?
 
@@ -66,7 +93,9 @@ struct FilteredPreview: UIViewRepresentable {
         func draw(in view: MTKView) {
             guard let frame = frames.get(), let context, let drawable = view.currentDrawable,
                   let buffer = queue?.makeCommandBuffer() else { return }
-            let filtered = (try? FilterRenderer.apply(recipe, to: frame)) ?? frame
+            let usesFaces = recipe.flatMap { FilterCatalog.definition(id: $0.id) }?.usesFaces == true
+            let faces = usesFaces ? faceTracker.faces(updatingFrom: frame) : nil
+            let filtered = (try? FilterRenderer.apply(recipe, to: frame, faces: faces)) ?? frame
             // Aspect-fill the drawable, centred.
             let size = view.drawableSize
             let scale = max(size.width / frame.extent.width, size.height / frame.extent.height)

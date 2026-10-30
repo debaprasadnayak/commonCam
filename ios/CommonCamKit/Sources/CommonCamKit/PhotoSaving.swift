@@ -32,7 +32,8 @@ public struct BulkSaveReport: Equatable, Sendable {
     }
 }
 
-/// Saves photos to the device's own Photos library: shared-gallery originals (one or many) and fresh captures.
+/// Saves photos to the device's own Photos library: shared-gallery items (one or many) and fresh captures. Photos
+/// with a filter recipe are saved as their filtered version (the item detail view can still save the original).
 public struct PhotoSaver: Sendable {
     private let library: PhotoLibrary
     private let download: @Sendable (URL) async throws -> Data
@@ -43,7 +44,7 @@ public struct PhotoSaver: Sendable {
         self.download = download
     }
 
-    /// Saves the originals one at a time (keeps memory flat for big batches), carrying on past individual failures.
+    /// Saves items one at a time (keeps memory flat for big batches), carrying on past individual failures.
     public func save(
         _ items: [GalleryItem], progress: @Sendable (BulkSaveProgress) async -> Void = { _ in }
     ) async -> BulkSaveReport {
@@ -54,7 +55,7 @@ public struct PhotoSaver: Sendable {
         var failed: [String] = []
         for (index, item) in items.enumerated() {
             do {
-                try await library.addPhoto(try await download(item.downloadUrl))
+                try await library.addPhoto(Self.filtered(try await download(item.downloadUrl), with: item.filterRecipe))
                 saved.append(item.id)
             } catch {
                 failed.append(item.id)
@@ -70,11 +71,20 @@ public struct PhotoSaver: Sendable {
         guard enabled else { return .off }
         guard await library.requestAddAccess() else { return .accessDenied }
         do {
-            try await library.addPhoto(photo.data)
+            try await library.addPhoto(Self.filtered(photo.data, with: photo.filterRecipe))
             return .saved
         } catch {
             return .failed
         }
+    }
+}
+
+extension PhotoSaver {
+    /// The filtered render of `original`, or `original` itself when there is no recipe or this build can't render it
+    /// (the gallery shows the original in that case too).
+    static func filtered(_ original: Data, with recipe: FilterRecipe?) -> Data {
+        guard let recipe else { return original }
+        return (try? FilterRenderer.renderedJPEG(of: original, with: recipe)) ?? original
     }
 }
 

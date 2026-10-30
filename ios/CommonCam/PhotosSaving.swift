@@ -17,7 +17,7 @@ struct PhotoKitLibrary: PhotoLibrary {
 }
 
 extension PhotoSaver {
-    /// Saves originals for now; the filtered version arrives with filters (#6).
+    /// Saves the filtered version of photos that have a recipe (the item detail view can save the original).
     static let live = PhotoSaver(library: PhotoKitLibrary()) { url in
         let (data, response) = try await URLSession.shared.data(from: url)
         guard (response as? HTTPURLResponse)?.statusCode == 200 else { throw URLError(.badServerResponse) }

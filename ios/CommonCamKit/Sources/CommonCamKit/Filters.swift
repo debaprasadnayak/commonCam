@@ -10,9 +10,32 @@ public struct FilterDefinition: Sendable, Identifiable, CustomStringConvertible 
     public let name: String
     public let version: Int
     public let defaults: [String: Double]
-    let apply: @Sendable (_ image: CIImage, _ params: [String: Double], _ version: Int) -> CIImage
+    /// Face-based looks get the faces in the image (see `FaceDetector`); everything else gets an empty list.
+    public let usesFaces: Bool
+    let apply: @Sendable (_ image: CIImage, _ params: [String: Double], _ version: Int, _ faces: [DetectedFace]) -> CIImage
 
     public var description: String { id }
+
+    init(
+        id: String, name: String, version: Int, defaults: [String: Double],
+        apply: @escaping @Sendable (_ image: CIImage, _ params: [String: Double], _ version: Int) -> CIImage
+    ) {
+        self.init(id: id, name: name, version: version, defaults: defaults, usesFaces: false) { image, params, version, _ in
+            apply(image, params, version)
+        }
+    }
+
+    init(
+        id: String, name: String, version: Int, defaults: [String: Double], usesFaces: Bool,
+        apply: @escaping @Sendable (_ image: CIImage, _ params: [String: Double], _ version: Int, _ faces: [DetectedFace]) -> CIImage
+    ) {
+        self.id = id
+        self.name = name
+        self.version = version
+        self.defaults = defaults
+        self.usesFaces = usesFaces
+        self.apply = apply
+    }
 
     /// A recipe for this look at its current version; `params` override the defaults.
     public func recipe(params: [String: Double] = [:]) -> FilterRecipe {
@@ -81,9 +104,115 @@ public enum FilterCatalog {
                 .applyingFilter("CIVibrance", parameters: ["inputAmount": 0.9])
                 .applyingFilter("CIColorControls", parameters: [kCIInputContrastKey: 1.12, kCIInputBrightnessKey: 0.02])
         },
+        FilterDefinition(id: "dusk", name: "Dusk", version: 1, defaults: ["intensity": 1]) { image, _, _ in
+            // Split tone from one matrix: blue gets a bias and less gain (bluer shadows), red more gain (warmer highlights).
+            image
+                .applyingFilter("CIColorControls", parameters: [kCIInputSaturationKey: 0.85, kCIInputContrastKey: 1.06])
+                .inSRGB {
+                    $0.applyingFilter("CIColorMatrix", parameters: [
+                        "inputRVector": CIVector(x: 1.14, y: 0, z: 0, w: 0),
+                        "inputGVector": CIVector(x: 0, y: 0.97, z: 0, w: 0),
+                        "inputBVector": CIVector(x: 0, y: 0, z: 0.78, w: 0),
+                        "inputBiasVector": CIVector(x: -0.06, y: 0.02, z: 0.14, w: 0),
+                    ])
+                }
+        },
+        FilterDefinition(id: "sorbet", name: "Sorbet", version: 1, defaults: ["intensity": 1]) { image, _, _ in
+            image.applyingFilter("CIColorCubeWithColorSpace", parameters: [
+                "inputCubeDimension": SorbetLUT.dimension,
+                "inputCubeData": SorbetLUT.data,
+                "inputColorSpace": CGColorSpace(name: CGColorSpace.sRGB)!,
+            ])
+        },
+        FilterDefinition(id: "silver", name: "Silver", version: 1, defaults: ["intensity": 1]) { image, _, _ in
+            // Bleach-bypass style: a grey copy overlaid on the colour one, for hard contrast and muted colour.
+            image.inSRGB { photo in
+                photo
+                    .applyingFilter("CIColorControls", parameters: [kCIInputSaturationKey: 0])
+                    .applyingFilter("CIOverlayBlendMode", parameters: [kCIInputBackgroundImageKey: photo])
+                    .applyingFilter("CIColorControls", parameters: [kCIInputSaturationKey: 0.55, kCIInputBrightnessKey: -0.02])
+            }
+        },
+        FilterDefinition(id: "haze", name: "Haze", version: 1, defaults: ["intensity": 1]) { image, _, _ in
+            let extent = image.extent
+            // Radius relative to the image, so the preview and the full-resolution photo bloom alike.
+            return image
+                .clampedToExtent()
+                .applyingFilter("CIBloom", parameters: [
+                    kCIInputRadiusKey: max(extent.width, extent.height) * 0.02,
+                    kCIInputIntensityKey: 0.7,
+                ])
+                .cropped(to: extent)
+                .inSRGB {
+                    $0.applyingFilter("CIColorMatrix", parameters: [
+                        "inputRVector": CIVector(x: 0.9, y: 0, z: 0, w: 0),
+                        "inputGVector": CIVector(x: 0, y: 0.88, z: 0, w: 0),
+                        "inputBVector": CIVector(x: 0, y: 0, z: 0.9, w: 0),
+                        "inputBiasVector": CIVector(x: 0.1, y: 0.08, z: 0.1, w: 0),
+                    ])
+                }
+                .applyingFilter("CIColorControls", parameters: [kCIInputSaturationKey: 0.9])
+        },
+        FilterDefinition(id: "retro", name: "Retro", version: 1, defaults: ["intensity": 1]) { image, _, _ in
+            // Faded print: flattened ends of the tone curve, less blue, a warm cast.
+            image.inSRGB {
+                $0
+                    .applyingFilter("CIToneCurve", parameters: [
+                        "inputPoint0": CIVector(x: 0, y: 0.1),
+                        "inputPoint1": CIVector(x: 0.25, y: 0.24),
+                        "inputPoint2": CIVector(x: 0.5, y: 0.52),
+                        "inputPoint3": CIVector(x: 0.75, y: 0.79),
+                        "inputPoint4": CIVector(x: 1, y: 0.93),
+                    ])
+                    .applyingFilter("CIColorMatrix", parameters: [
+                        "inputRVector": CIVector(x: 1.04, y: 0, z: 0, w: 0),
+                        "inputGVector": CIVector(x: 0, y: 0.97, z: 0, w: 0),
+                        "inputBVector": CIVector(x: 0, y: 0, z: 0.8, w: 0),
+                        "inputBiasVector": CIVector(x: 0.02, y: 0.01, z: 0.03, w: 0),
+                    ])
+            }
+            .applyingFilter("CIColorControls", parameters: [kCIInputSaturationKey: 0.88])
+        },
+        FaceLooks.glow,
+        FaceLooks.spotlight,
     ]
 
     public static func definition(id: String) -> FilterDefinition? {
         all.first { $0.id == id }
     }
+}
+
+extension CIImage {
+    /// Runs `body` on gamma-encoded sRGB values instead of Core Image's linear working space, so colour matrices and
+    /// curves act on tones the way the eye sees them (a shadow lift stays a shadow lift).
+    func inSRGB(_ body: (CIImage) -> CIImage) -> CIImage {
+        body(applyingFilter("CILinearToSRGBToneCurve")).applyingFilter("CISRGBToneCurveToLinear")
+    }
+}
+
+/// Sorbet's 3D LUT, computed (not hand-painted) so it is exact and reviewable: pastel, high-key, mint shadows and
+/// peach highlights. Defined over sRGB values.
+enum SorbetLUT {
+    static let dimension = 17
+
+    static let data: Data = {
+        let n = dimension
+        var cube = [Float]()
+        cube.reserveCapacity(n * n * n * 4)
+        for b in 0..<n {
+            for g in 0..<n {
+                for r in 0..<n {
+                    let rgb = [r, g, b].map { Double($0) / Double(n - 1) }
+                    let luma = 0.299 * rgb[0] + 0.587 * rgb[1] + 0.114 * rgb[2]
+                    // Less saturated, then lifted and compressed toward the top of the range.
+                    var out = rgb.map { luma + ($0 - luma) * 0.7 }.map { 0.14 + $0 * 0.82 }
+                    out[0] += 0.05 * luma - 0.02 * (1 - luma)
+                    out[1] += 0.04 * (1 - luma)
+                    out[2] += 0.03 * (1 - luma) - 0.04 * luma
+                    cube += out.map { Float(min(max($0, 0), 1)) } + [1]
+                }
+            }
+        }
+        return cube.withUnsafeBufferPointer { Data(buffer: $0) }
+    }()
 }
