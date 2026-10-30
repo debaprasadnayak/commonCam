@@ -36,7 +36,7 @@ The app talks to `http://localhost:8787` (set by `APIBaseURL` in `ios/CommonCam-
 
 ## Cloudflare dev deployment
 
-The `deploy-dev` GitHub Actions job deploys the API to `commoncam-api-dev` on pushes to `main` (or a manual run of the CI workflow), after both test jobs pass, applying any new D1 migrations to the remote `commoncam` database first. Configure these repository Actions secrets before merging or pushing the workflow to `main`:
+The `deploy-dev` GitHub Actions job deploys the API to `commoncam-api-dev` on pushes to `main` (or a manual run of the CI workflow), after the Worker API tests pass, applying any new D1 migrations to the remote `commoncam` database first. Configure these repository Actions secrets before merging or pushing the workflow to `main`:
 
 - `CLOUDFLARE_API_TOKEN`: a token with Workers Scripts:Edit and D1:Edit on this account (the job applies D1 migrations before deploying).
 - `CLOUDFLARE_ACCOUNT_ID`: the Cloudflare account ID.

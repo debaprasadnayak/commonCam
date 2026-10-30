@@ -44,7 +44,8 @@ jobs:
   deploy-dev:
     name: Deploy API to dev
     if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
-    needs: [api, ios]
+    # Ships only the Worker, so it is gated on the Worker tests alone.
+    needs: [api]
     runs-on: ubuntu-latest
     defaults:
       run:
