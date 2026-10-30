@@ -313,43 +313,6 @@ private let otter = Member(
         #expect(body == ["tier": "party", "signedTransaction": "header.payload.signature"])
     }
 
-    @Test func sharesAPhotoByUploadingTheOriginalUntouchedThenConfirmingIt() async throws {
-        let original = Data([0x00, 0x01, 0xFE, 0xFF])
-        StubURLProtocol.queue = [
-            (201, Data(#"{"itemId":"i1","uploadUrl":"https://api.test/media/groups/g1/i1?sig=s","expiresAt":"2026-10-30T08:15:00.000Z"}"#.utf8)),
-            (200, Data()),
-            (201, Data(itemJSON.utf8)),
-        ]
-
-        let item = try await client.share(CapturedPhoto(data: original, format: .heic), in: "g1")
-
-        #expect(item == otterPhoto)
-        let requests = StubURLProtocol.requests
-        try #require(requests.count == 3)
-        #expect(requests[0].httpMethod == "POST")
-        #expect(requests[0].url?.absoluteString == "https://api.test/groups/g1/uploads")
-        let ask = try JSONSerialization.jsonObject(with: try #require(requests[0].httpBody)) as? [String: Any]
-        #expect(ask?["bytes"] as? Int == 4)
-        #expect(ask?["contentType"] as? String == "image/heic")
-        #expect(requests[1].httpMethod == "PUT")
-        #expect(requests[1].url?.absoluteString == "https://api.test/media/groups/g1/i1?sig=s")
-        #expect(requests[1].httpBody == original)
-        #expect(requests[1].value(forHTTPHeaderField: "Authorization") == nil)
-        #expect(requests[2].httpMethod == "POST")
-        #expect(requests[2].url?.absoluteString == "https://api.test/groups/g1/items")
-        let confirm = try JSONSerialization.jsonObject(with: try #require(requests[2].httpBody)) as? [String: Any]
-        #expect(confirm?["itemId"] as? String == "i1")
-    }
-
-    @Test func doesNotUploadWhenTheGroupRefusesTheUpload() async throws {
-        StubURLProtocol.queue = [(413, Data())]
-
-        await #expect(throws: APIError(statusCode: 413)) {
-            try await client.share(CapturedPhoto(data: Data([1]), format: .heic), in: "g1")
-        }
-        #expect(StubURLProtocol.requests.count == 1)
-    }
-
     @Test func listsTheSharedGallery() async throws {
         StubURLProtocol.responseBody = Data("[\(itemJSON)]".utf8)
 
@@ -375,6 +338,58 @@ private let otter = Member(
         StubURLProtocol.responseBody = Data()
 
         await #expect(throws: APIError(statusCode: 403)) { try await client.deleteItem("i1", in: "g1") }
+    }
+
+    @Test func drivesAResumableUploadThroughStartPlanCompleteAndConfirm() async throws {
+        StubURLProtocol.queue = [
+            (201, Data(#"{"itemId":"i1","partSize":5242880,"partCount":2}"#.utf8)),
+            (200, Data(#"{"uploadedParts":[1],"parts":[{"partNumber":2,"url":"https://api.test/media-parts/i1/2?sig=s"}],"expiresAt":"2026-10-30T08:15:00.000Z"}"#.utf8)),
+            (204, Data()),
+            (201, Data(itemJSON.utf8)),
+        ]
+
+        let upload = try await client.startUpload(bytes: 5_242_890, contentType: "image/heic", in: "g1")
+        let plan = try await client.partPlan(itemID: upload.itemId, in: "g1")
+        try await client.completeUpload(itemID: "i1", in: "g1")
+        let item = try await client.confirmUpload(itemID: "i1", in: "g1")
+
+        #expect(upload == MultipartUpload(itemId: "i1", partSize: 5_242_880, partCount: 2))
+        #expect(plan.uploadedParts == [1])
+        #expect(plan.parts == [PartURL(partNumber: 2, url: URL(string: "https://api.test/media-parts/i1/2?sig=s")!)])
+        #expect(item == otterPhoto)
+        let requests = StubURLProtocol.requests
+        #expect(requests.map(\.url?.path) == ["/groups/g1/multipart", "/groups/g1/multipart/i1/parts", "/groups/g1/multipart/i1/complete", "/groups/g1/items"])
+        #expect(requests.allSatisfy { $0.httpMethod == "POST" })
+        let ask = try JSONSerialization.jsonObject(with: try #require(requests[0].httpBody)) as? [String: Any]
+        #expect(ask?["bytes"] as? Int == 5_242_890)
+    }
+
+    @Test func backgroundTransportPutsThePartFileWithoutTheDeviceToken() async throws {
+        let file = FileManager.default.temporaryDirectory.appending(path: "part-\(UUID().uuidString)")
+        try Data([9, 8, 7]).write(to: file)
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [StubURLProtocol.self]
+        let transport = BackgroundUploadTransport(configuration: config)
+
+        try await transport.upload(file: file, to: URL(string: "https://api.test/media-parts/i1/1?sig=s")!, taskID: "a#1")
+
+        let request = try #require(StubURLProtocol.requests.first)
+        #expect(request.httpMethod == "PUT")
+        #expect(request.httpBody == Data([9, 8, 7]))
+        #expect(request.value(forHTTPHeaderField: "Authorization") == nil)
+    }
+
+    @Test func backgroundTransportReportsARefusedPart() async throws {
+        let file = FileManager.default.temporaryDirectory.appending(path: "part-\(UUID().uuidString)")
+        try Data([1]).write(to: file)
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [StubURLProtocol.self]
+        StubURLProtocol.statusCode = 403
+
+        await #expect(throws: APIError(statusCode: 403)) {
+            try await BackgroundUploadTransport(configuration: config)
+                .upload(file: file, to: URL(string: "https://api.test/media-parts/i1/1")!, taskID: "b#1")
+        }
     }
 }
 

@@ -1,5 +1,6 @@
 import { isHostOrCoHost } from "./hostControls";
 import type { Env } from "./index";
+import { VISIBLE_TO_VIEWER } from "./moderation";
 
 const UPLOAD_URL_TTL_S = 15 * 60;
 const DOWNLOAD_URL_TTL_S = 15 * 60;
@@ -12,7 +13,7 @@ interface Caller {
   memberId: string | null;
 }
 
-interface ItemRow {
+export interface ItemRow {
   id: string;
   member_id: string | null;
   type: string;
@@ -23,6 +24,7 @@ interface ItemRow {
   contributor_device_id: string;
   display_name: string | null;
   colour: string | null;
+  hidden: number;
 }
 
 /**
@@ -71,6 +73,27 @@ export async function handleMedia(request: Request, url: URL, env: Env, deviceId
 }
 
 async function requestUpload(request: Request, url: URL, env: Env, groupId: string, deviceId: string) {
+  const item = await createPendingItem(request, env, groupId, deviceId);
+  if (item instanceof Response) return item;
+  const exp = String(Math.floor(Date.now() / 1000) + UPLOAD_URL_TTL_S);
+  const uploadUrl = await signedUrl(env, url.origin, "PUT", item.objectKey, exp, String(item.bytes), item.contentType);
+  return Response.json({ itemId: item.itemId, uploadUrl, expiresAt: new Date(Number(exp) * 1000).toISOString() }, { status: 201 });
+}
+
+export interface PendingItem {
+  itemId: string;
+  objectKey: string;
+  bytes: number;
+  contentType: string;
+}
+
+/** Validates an upload request body ({bytes, contentType}) for the caller and records a 'pending' item. */
+export async function createPendingItem(
+  request: Request,
+  env: Env,
+  groupId: string,
+  deviceId: string,
+): Promise<PendingItem | Response> {
   const caller = await findCaller(env, groupId, deviceId);
   if (!caller) return new Response("Not found", { status: 404 });
   if (!isOpen(caller.group)) return new Response("This group is no longer open", { status: 410 });
@@ -94,10 +117,7 @@ async function requestUpload(request: Request, url: URL, env: Env, groupId: stri
   )
     .bind(itemId, groupId, caller.memberId, deviceId, CONTENT_TYPES[contentType], contentType, bytes, objectKey, new Date().toISOString())
     .run();
-
-  const exp = String(Math.floor(Date.now() / 1000) + UPLOAD_URL_TTL_S);
-  const uploadUrl = await signedUrl(env, url.origin, "PUT", objectKey, exp, String(bytes), contentType);
-  return Response.json({ itemId, uploadUrl, expiresAt: new Date(Number(exp) * 1000).toISOString() }, { status: 201 });
+  return { itemId, objectKey, bytes, contentType };
 }
 
 async function confirmItem(request: Request, env: Env, groupId: string, deviceId: string) {
@@ -140,13 +160,15 @@ async function confirmItem(request: Request, env: Env, groupId: string, deviceId
 async function gallery(url: URL, env: Env, groupId: string, deviceId: string) {
   if (!(await findCaller(env, groupId, deviceId))) return new Response("Not found", { status: 404 });
   const moderator = await isHostOrCoHost(env, groupId, deviceId);
-  const { results } = await env.DB.prepare(`${ITEM_SELECT} WHERE i.group_id = ? AND i.status = 'ready' ORDER BY i.created_at DESC, i.rowid DESC`)
-    .bind(groupId)
+  const { results } = await env.DB.prepare(
+    `${ITEM_SELECT} WHERE i.group_id = ?1 AND i.status = 'ready' AND ${VISIBLE_TO_VIEWER} ORDER BY i.created_at DESC, i.rowid DESC`,
+  )
+    .bind(groupId, deviceId, moderator ? 1 : 0)
     .all<ItemRow>();
   return Response.json(await Promise.all(results.map((row) => itemJson(env, row, url.origin, moderator || row.contributor_device_id === deviceId))));
 }
 
-const ITEM_SELECT = `SELECT i.id, i.member_id, i.type, i.content_type, i.bytes, i.object_key, i.created_at, i.contributor_device_id, m.display_name, m.colour
+export const ITEM_SELECT = `SELECT i.id, i.member_id, i.type, i.content_type, i.bytes, i.object_key, i.created_at, i.contributor_device_id, i.hidden, m.display_name, m.colour
   FROM items i LEFT JOIN members m ON m.id = i.member_id`;
 
 async function findItem(env: Env, itemId: string): Promise<ItemRow> {
@@ -154,7 +176,7 @@ async function findItem(env: Env, itemId: string): Promise<ItemRow> {
 }
 
 /** The group, if the device is its host or an active member. `memberId` is null for the host. */
-async function findCaller(env: Env, groupId: string, deviceId: string): Promise<Caller | null> {
+export async function findCaller(env: Env, groupId: string, deviceId: string): Promise<Caller | null> {
   const row = await env.DB.prepare(
     `SELECT g.id, g.state, g.ends_at, g.storage_cap_bytes, g.storage_used_bytes, g.host_device_id, m.id AS member_id
      FROM groups g LEFT JOIN members m ON m.group_id = g.id AND m.device_id = ?2 AND m.status = 'active'
@@ -166,12 +188,12 @@ async function findCaller(env: Env, groupId: string, deviceId: string): Promise<
   return { group: row, memberId: row.host_device_id === deviceId ? null : row.member_id };
 }
 
-function isOpen(group: Caller["group"]) {
+export function isOpen(group: Caller["group"]) {
   return group.state === "Active" && Date.parse(group.ends_at) > Date.now();
 }
 
 /** `canDelete`: whether the caller may delete it (their own item, or they are host/co-host; see deleteItem.ts). */
-async function itemJson(env: Env, row: ItemRow, origin: string, canDelete: boolean) {
+export async function itemJson(env: Env, row: ItemRow, origin: string, canDelete: boolean) {
   const exp = String(Math.floor(Date.now() / 1000) + DOWNLOAD_URL_TTL_S);
   return {
     id: row.id,
@@ -185,6 +207,7 @@ async function itemJson(env: Env, row: ItemRow, origin: string, canDelete: boole
     downloadUrl: await signedUrl(env, origin, "GET", row.object_key, exp, "", ""),
     downloadUrlExpiresAt: new Date(Number(exp) * 1000).toISOString(),
     canDelete,
+    hidden: row.hidden === 1,
   };
 }
 
@@ -197,13 +220,13 @@ async function signedUrl(env: Env, origin: string, method: string, key: string, 
   return url.toString();
 }
 
-async function verify(env: Env, sig: string, method: string, key: string, exp: string, bytes: string, type: string) {
+export async function verify(env: Env, sig: string, method: string, key: string, exp: string, bytes: string, type: string) {
   const expected = new TextEncoder().encode(await sign(env, method, key, exp, bytes, type));
   const given = new TextEncoder().encode(sig);
   return given.byteLength === expected.byteLength && crypto.subtle.timingSafeEqual(given, expected);
 }
 
-async function sign(env: Env, method: string, key: string, exp: string, bytes: string, type: string) {
+export async function sign(env: Env, method: string, key: string, exp: string, bytes: string, type: string) {
   if (!env.MEDIA_SIGNING_KEY) throw new Error("MEDIA_SIGNING_KEY is not configured");
   const hmacKey = await crypto.subtle.importKey(
     "raw",

@@ -32,13 +32,6 @@ public struct CapturedPhoto: Sendable {
     }
 }
 
-/// A short-lived URL to upload one original to, for an item that is confirmed afterwards.
-public struct UploadTicket: Codable, Equatable, Sendable {
-    public let itemId: String
-    public let uploadUrl: URL
-    public let expiresAt: Date
-}
-
 /// Who shot an item. `memberId` is nil for the host.
 public struct Contributor: Codable, Equatable, Hashable, Sendable {
     public let memberId: String?
@@ -58,4 +51,8 @@ public struct GalleryItem: Codable, Equatable, Identifiable, Sendable {
     public let downloadUrlExpiresAt: Date
     /// Whether this device may delete it: its own upload, or any item for the host and co-hosts.
     public var canDelete = false
+    /// Set only in the host's and co-hosts' view: reported and awaiting their review. Guests never see such items.
+    public var hidden: Bool? = nil
+
+    public var isHidden: Bool { hidden == true }
 }
