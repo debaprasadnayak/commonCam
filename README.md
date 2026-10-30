@@ -43,3 +43,14 @@ The `deploy-dev` GitHub Actions job deploys the API to `commoncam-api-dev` on pu
 - `MEDIA_SIGNING_KEY`: a private signing key for media URLs; use a strong random value and do not commit it.
 
 The dev Worker uses the `commoncam` D1 database and private `commoncam-media` R2 bucket. The `commoncam-events` Queue is provisioned but is not yet bound to the Worker. Cron triggers remain unconfigured until the API implements a scheduled handler.
+
+## Analytics
+
+Anonymous and aggregated only (no ad or tracking SDKs): the API counts groups created, uploads and uploaded bytes per UTC day and tier in the D1 table `daily_stats`, with no device, member or group ids, so counts survive group deletion. Report (groups created, uploads, conversion, estimated cost per group, per tier and overall):
+
+```sh
+cd api && npx wrangler d1 execute commoncam --remote --file reports/analytics.sql   # dev; needs CLOUDFLARE_API_TOKEN/ACCOUNT_ID
+cd api && npx wrangler d1 execute DB --local --file reports/analytics.sql           # local `npm run dev` data
+```
+
+Cost per group is an estimate from COST_MODEL.md's R2 unit prices, not billing data; see the comments in `api/reports/analytics.sql`.

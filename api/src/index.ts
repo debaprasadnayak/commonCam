@@ -1,3 +1,4 @@
+import { countGroupCreated } from "./analytics";
 import { handleApproval } from "./approval";
 import { handleDeleteItem } from "./deleteItem";
 import { insertTasterGroup, newGroupRow, toJson, type GroupRow } from "./groups";
@@ -42,7 +43,7 @@ export default {
       if (isPaidTier(body.tier)) return createPaidGroup(env, deviceId, body.tier, body.signedTransaction);
       if (body.tier !== "taster") return new Response("Unknown tier", { status: 400 });
       const row = newGroupRow("taster");
-      const { meta } = await insertTasterGroup(env.DB, deviceId, row).run();
+      const [{ meta }] = await env.DB.batch([insertTasterGroup(env.DB, deviceId, row), countGroupCreated(env.DB, row.id)]);
       if (meta.changes === 0) return new Response("Free Taster limit reached for this device", { status: 403 });
       return Response.json(toJson(row), { status: 201 });
     }

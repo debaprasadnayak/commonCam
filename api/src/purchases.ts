@@ -1,3 +1,4 @@
+import { countGroupCreated } from "./analytics";
 import { InvalidTransaction, verifySignedTransaction, type AppStoreTransaction } from "./appStore";
 import { insertGroup, newGroupRow, toJson } from "./groups";
 import type { Env } from "./index";
@@ -36,6 +37,7 @@ export async function createPaidGroup(
         transaction.environment ?? null,
         new Date().toISOString(),
       ),
+      countGroupCreated(env.DB, row.id),
     ]);
   } catch (error) {
     if (isReplayedTransaction(error)) {
