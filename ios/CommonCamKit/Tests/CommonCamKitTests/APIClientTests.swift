@@ -114,6 +114,19 @@ private let otter = Member(
         #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer device-token")
     }
 
+    @Test func listsTheGroupsIveJoined() async throws {
+        StubURLProtocol.responseBody = Data("""
+        [{"group":\(groupJSON),"member":\(memberJSON)}]
+        """.utf8)
+
+        let memberships = try await client.memberships()
+
+        #expect(memberships == [Membership(group: tasterGroup, member: otter)])
+        let request = try #require(StubURLProtocol.requests.first)
+        #expect(request.httpMethod == "GET")
+        #expect(request.url?.absoluteString == "https://api.test/memberships")
+    }
+
     @Test func fetchesTheHostsInvite() async throws {
         StubURLProtocol.responseBody = Data(#"{"qrToken":"tok","joinUrl":"https://api.test/join/tok","joiningPaused":false}"#.utf8)
 

@@ -46,7 +46,24 @@ export async function handleJoin(request: Request, url: URL, env: Env, deviceId:
   if (url.pathname === "/join" && request.method === "POST") {
     return join(request, env, deviceId);
   }
+  if (url.pathname === "/memberships" && request.method === "GET") return memberships(env, deviceId);
   return null;
+}
+
+/** `GET /memberships`: the caller's active memberships (any role, incl. Grace groups), newest first, as join returns them. */
+async function memberships(env: Env, deviceId: string): Promise<Response> {
+  const { results: rows } = await env.DB.prepare(
+    `SELECT group_id, ${MEMBER_COLUMNS} FROM members WHERE device_id = ? AND status = 'active' ORDER BY joined_at DESC, rowid DESC`,
+  )
+    .bind(deviceId)
+    .all<MemberRow & { group_id: string }>();
+  const { results: groups } = await env.DB.prepare(
+    `${GROUP_SELECT} WHERE id IN (SELECT group_id FROM members WHERE device_id = ? AND status = 'active')`,
+  )
+    .bind(deviceId)
+    .all<GroupRow>();
+  const byId = new Map(groups.map((group) => [group.id, group]));
+  return Response.json(rows.map((row) => ({ group: toJson(byId.get(row.group_id)!), member: memberJson(row) })));
 }
 
 export async function invite(env: Env, url: URL, groupId: string, deviceId: string): Promise<Response> {
@@ -100,13 +117,14 @@ async function join(request: Request, env: Env, deviceId: string): Promise<Respo
     await recordFailure(env, keys);
     return new Response("Unknown QR code or PIN", { status: 404 });
   }
-  if (group.state !== "Active" || Date.parse(group.ends_at) <= Date.now()) {
-    return new Response("This group is no longer open", { status: 410 });
-  }
-
+  // An active member may always get back in (e.g. to save photos during Grace); new joins need an open group.
   const existing = await env.DB.prepare(`SELECT ${MEMBER_COLUMNS} FROM members WHERE group_id = ? AND device_id = ?`)
     .bind(group.id, deviceId)
     .first<MemberRow>();
+  if (existing?.status === "active") return joinResponse(group, existing, 200);
+  if (group.state !== "Active" || Date.parse(group.ends_at) <= Date.now()) {
+    return new Response("This group is no longer open", { status: 410 });
+  }
   if (existing && existing.status !== "removed" && existing.status !== "banned") {
     return joinResponse(group, existing, 200);
   }

@@ -116,6 +116,21 @@ describe("POST /join", () => {
     expect(res.status).toBe(410);
   });
 
+  it("lets an existing member back in after the group ended (Grace), but no one new", async () => {
+    const group = await createGroup("host-grace");
+    const { qrToken } = await inviteFor("host-grace", group.id);
+    await join("guest-grace", { qrToken, ...consentingGuest });
+    await env.DB.prepare("UPDATE groups SET state = 'Grace', ends_at = ?, grace_ends_at = ? WHERE id = ?")
+      .bind(new Date(Date.now() - 1000).toISOString(), new Date(Date.now() + 86_400_000).toISOString(), group.id)
+      .run();
+
+    const back = await join("guest-grace", { qrToken });
+
+    expect(back.status).toBe(200);
+    expect((await back.json<any>()).group).toMatchObject({ id: group.id, state: "Grace" });
+    expect((await join("guest-new", { qrToken, ...consentingGuest })).status).toBe(410);
+  });
+
   it("rate-limits repeated guessing from one network, even across device tokens", async () => {
     const ip = "192.0.2.99";
     for (let i = 0; i < 10; i++) {
@@ -137,6 +152,32 @@ describe("POST /join", () => {
     const res = await join("guessing-device", { qrToken: "guess-x" }, "10.0.1.1");
 
     expect(res.status).toBe(429);
+  });
+});
+
+describe("GET /memberships", () => {
+  it("lists the groups the device is an active member of, so the app can restore them at launch", async () => {
+    const [ended, current, removedFrom] = [await createGroup("host-ms-1"), await createGroup("host-ms-2"), await createGroup("host-ms-3")];
+    const joinAs = async (host: string, groupId: string, token: string) =>
+      (await join(token, { qrToken: (await inviteFor(host, groupId)).qrToken, ...consentingGuest })).json<any>();
+    const first = await joinAs("host-ms-1", ended.id, "guest-ms");
+    const second = await joinAs("host-ms-2", current.id, "guest-ms");
+    await api(`/groups/${current.id}/members/${second.member.id}/co-host`, { method: "POST", token: "host-ms-2" });
+    const third = await joinAs("host-ms-3", removedFrom.id, "guest-ms");
+    await api(`/groups/${removedFrom.id}/members/${third.member.id}/remove`, { method: "POST", token: "host-ms-3" });
+    await env.DB.prepare("UPDATE groups SET state = 'Grace', grace_ends_at = ? WHERE id = ?")
+      .bind(new Date(Date.now() + 86_400_000).toISOString(), ended.id)
+      .run();
+
+    const res = await api("/memberships", { token: "guest-ms" });
+
+    expect(res.status).toBe(200);
+    const memberships = await res.json<any[]>();
+    expect(memberships.map((m) => [m.group.id, m.group.state, m.member.id, m.member.role])).toEqual([
+      [current.id, "Active", second.member.id, "co-host"],
+      [ended.id, "Grace", first.member.id, "guest"],
+    ]);
+    expect(await (await api("/memberships", { token: "host-ms-1" })).json()).toEqual([]);
   });
 });
 

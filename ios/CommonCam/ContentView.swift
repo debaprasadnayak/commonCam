@@ -113,6 +113,9 @@ struct ContentView: View {
         do {
             products = try await purchaser.products()
             groups = try await api.myGroups()
+            // Server memberships survive relaunch; requests still awaiting approval are kept from this session.
+            let remote = try await api.memberships()
+            joined = remote + joined.filter { mine in mine.isPending && !remote.contains { $0.group.id == mine.group.id } }
             errorMessage = nil
         } catch {
             errorMessage = "Couldn't load groups: \(error.localizedDescription)"

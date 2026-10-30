@@ -102,6 +102,11 @@ public struct APIClient: Sendable {
         try await send("GET", "groups")
     }
 
+    /// Groups this device has joined as an active guest or co-host (incl. ended ones in Grace), newest first.
+    public func memberships() async throws -> [Membership] {
+        try await send("GET", "memberships")
+    }
+
     /// Activates a paid group; `signedTransaction` is StoreKit's `VerificationResult.jwsRepresentation`.
     public func createPaidGroup(tier: PaidTier, signedTransaction: String) async throws -> EventGroup {
         let body = try JSONEncoder().encode(["tier": tier.rawValue, "signedTransaction": signedTransaction])
