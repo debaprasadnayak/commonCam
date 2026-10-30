@@ -1,0 +1,209 @@
+{
+  "identifier" : "C0C0CA11",
+  "nonRenewingSubscriptions" : [],
+  "products" : [
+    {
+      "displayPrice" : "4.99",
+      "familyShareable" : false,
+      "internalID" : "6700000001",
+      "localizations" : [
+        {
+          "description" : "10 people, 2 days, 5 GB. Placeholder price.",
+          "displayName" : "Pocket",
+          "locale" : "en_US"
+        }
+      ],
+      "productID" : "app.commoncam.tier.pocket",
+      "referenceName" : "Pocket",
+      "type" : "Consumable"
+    },
+    {
+      "displayPrice" : "9.99",
+      "familyShareable" : false,
+      "internalID" : "6700000002",
+      "localizations" : [
+        {
+          "description" : "25 people, 5 days, 25 GB. Placeholder price.",
+          "displayName" : "Party",
+          "locale" : "en_US"
+        }
+      ],
+      "productID" : "app.commoncam.tier.party",
+      "referenceName" : "Party",
+      "type" : "Consumable"
+    },
+    {
+      "displayPrice" : "24.99",
+      "familyShareable" : false,
+      "internalID" : "6700000003",
+      "localizations" : [
+        {
+          "description" : "75 people, 10 days, 100 GB. Placeholder price.",
+          "displayName" : "Festival",
+          "locale" : "en_US"
+        }
+      ],
+      "productID" : "app.commoncam.tier.festival",
+      "referenceName" : "Festival",
+      "type" : "Consumable"
+    },
+    {
+      "displayPrice" : "4.99",
+      "familyShareable" : false,
+      "internalID" : "6700000004",
+      "localizations" : [
+        {
+          "description" : "Taster to Pocket: pay only the difference. Placeholder price.",
+          "displayName" : "Upgrade to Pocket",
+          "locale" : "en_US"
+        }
+      ],
+      "productID" : "app.commoncam.upgrade.taster.pocket",
+      "referenceName" : "Upgrade to Pocket",
+      "type" : "Consumable"
+    },
+    {
+      "displayPrice" : "9.99",
+      "familyShareable" : false,
+      "internalID" : "6700000005",
+      "localizations" : [
+        {
+          "description" : "Taster to Party: pay only the difference. Placeholder price.",
+          "displayName" : "Upgrade to Party",
+          "locale" : "en_US"
+        }
+      ],
+      "productID" : "app.commoncam.upgrade.taster.party",
+      "referenceName" : "Upgrade to Party",
+      "type" : "Consumable"
+    },
+    {
+      "displayPrice" : "24.99",
+      "familyShareable" : false,
+      "internalID" : "6700000006",
+      "localizations" : [
+        {
+          "description" : "Taster to Festival: pay only the difference. Placeholder price.",
+          "displayName" : "Upgrade to Festival",
+          "locale" : "en_US"
+        }
+      ],
+      "productID" : "app.commoncam.upgrade.taster.festival",
+      "referenceName" : "Upgrade to Festival",
+      "type" : "Consumable"
+    },
+    {
+      "displayPrice" : "5.00",
+      "familyShareable" : false,
+      "internalID" : "6700000007",
+      "localizations" : [
+        {
+          "description" : "Pocket to Party: pay only the difference. Placeholder price.",
+          "displayName" : "Upgrade to Party",
+          "locale" : "en_US"
+        }
+      ],
+      "productID" : "app.commoncam.upgrade.pocket.party",
+      "referenceName" : "Upgrade to Party",
+      "type" : "Consumable"
+    },
+    {
+      "displayPrice" : "20.00",
+      "familyShareable" : false,
+      "internalID" : "6700000008",
+      "localizations" : [
+        {
+          "description" : "Pocket to Festival: pay only the difference. Placeholder price.",
+          "displayName" : "Upgrade to Festival",
+          "locale" : "en_US"
+        }
+      ],
+      "productID" : "app.commoncam.upgrade.pocket.festival",
+      "referenceName" : "Upgrade to Festival",
+      "type" : "Consumable"
+    },
+    {
+      "displayPrice" : "15.00",
+      "familyShareable" : false,
+      "internalID" : "6700000009",
+      "localizations" : [
+        {
+          "description" : "Party to Festival: pay only the difference. Placeholder price.",
+          "displayName" : "Upgrade to Festival",
+          "locale" : "en_US"
+        }
+      ],
+      "productID" : "app.commoncam.upgrade.party.festival",
+      "referenceName" : "Upgrade to Festival",
+      "type" : "Consumable"
+    },
+    {
+      "displayPrice" : "2.49",
+      "familyShareable" : false,
+      "internalID" : "6700000010",
+      "localizations" : [
+        {
+          "description" : "+1 day for this group. Two add-ons cost about a tier upgrade. Placeholder price.",
+          "displayName" : "+1 day",
+          "locale" : "en_US"
+        }
+      ],
+      "productID" : "app.commoncam.addon.day",
+      "referenceName" : "+1 day",
+      "type" : "Consumable"
+    },
+    {
+      "displayPrice" : "2.49",
+      "familyShareable" : false,
+      "internalID" : "6700000011",
+      "localizations" : [
+        {
+          "description" : "+10 GB for this group. Two add-ons cost about a tier upgrade. Placeholder price.",
+          "displayName" : "+10 GB",
+          "locale" : "en_US"
+        }
+      ],
+      "productID" : "app.commoncam.addon.storage",
+      "referenceName" : "+10 GB",
+      "type" : "Consumable"
+    },
+    {
+      "displayPrice" : "2.49",
+      "familyShareable" : false,
+      "internalID" : "6700000012",
+      "localizations" : [
+        {
+          "description" : "+10 people for this group. Two add-ons cost about a tier upgrade. Placeholder price.",
+          "displayName" : "+10 people",
+          "locale" : "en_US"
+        }
+      ],
+      "productID" : "app.commoncam.addon.people",
+      "referenceName" : "+10 people",
+      "type" : "Consumable"
+    },
+    {
+      "displayPrice" : "2.99",
+      "familyShareable" : false,
+      "internalID" : "6700000013",
+      "localizations" : [
+        {
+          "description" : "Reopen an ended group for 7 more days. Placeholder price.",
+          "displayName" : "Extend group",
+          "locale" : "en_US"
+        }
+      ],
+      "productID" : "app.commoncam.extension",
+      "referenceName" : "Extension",
+      "type" : "Consumable"
+    }
+  ],
+  "settings" : {
+    "_failTransactionsEnabled" : false
+  },
+  "subscriptionGroups" : [],
+  "version" : {
+    "major" : 3,
+    "minor" : 0
+  }
+}

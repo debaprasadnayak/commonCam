@@ -1,0 +1,14 @@
+{
+  "name": "commoncam-api",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "test -f .dev.vars || cp .dev.vars.example .dev.vars; wrangler d1 migrations apply DB --local && wrangler dev",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-plugin": "^1.4.11",
+    "vitest": "^4.1.12",
+    "wrangler": "^4.156.0"
+  }
+}

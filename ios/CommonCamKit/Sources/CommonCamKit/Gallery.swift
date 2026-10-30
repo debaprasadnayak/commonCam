@@ -1,0 +1,62 @@
+import Foundation
+
+/// The encoding a capture is stored in. Originals are uploaded exactly as captured.
+public enum PhotoFormat: String, Sendable {
+    case heic
+    case jpeg
+
+    public var contentType: String {
+        switch self {
+        case .heic: "image/heic"
+        case .jpeg: "image/jpeg"
+        }
+    }
+
+    /// Full-resolution HEIC when the camera can encode HEVC, else JPEG; nil when there is no camera.
+    /// `availableCodecs` are `AVVideoCodecType` raw values ("hvc1", "jpeg").
+    public static func preferred(availableCodecs: [String]) -> PhotoFormat? {
+        if availableCodecs.contains("hvc1") { return .heic }
+        if availableCodecs.contains("jpeg") { return .jpeg }
+        return nil
+    }
+}
+
+/// The encoded original straight off the camera, plus the filter chosen when it was shot (nil = none).
+public struct CapturedPhoto: Sendable {
+    public let data: Data
+    public let format: PhotoFormat
+    public let filterRecipe: FilterRecipe?
+
+    public init(data: Data, format: PhotoFormat, filterRecipe: FilterRecipe? = nil) {
+        self.data = data
+        self.format = format
+        self.filterRecipe = filterRecipe
+    }
+}
+
+/// Who shot an item. `memberId` is nil for the host.
+public struct Contributor: Codable, Equatable, Hashable, Sendable {
+    public let memberId: String?
+    public let displayName: String
+    public let colour: String
+}
+
+/// A confirmed photo in the shared gallery. `downloadUrl` expires at `downloadUrlExpiresAt`; re-list to refresh.
+public struct GalleryItem: Codable, Equatable, Identifiable, Sendable {
+    public let id: String
+    public let type: String
+    public let contentType: String
+    public let bytes: Int64
+    public let createdAt: Date
+    public let contributor: Contributor
+    public let downloadUrl: URL
+    public let downloadUrlExpiresAt: Date
+    /// Whether this device may delete it: its own upload, or any item for the host and co-hosts.
+    public var canDelete = false
+    /// Set only in the host's and co-hosts' view: reported and awaiting their review. Guests never see such items.
+    public var hidden: Bool? = nil
+    /// How to render the filtered version; nil when shot without a filter. The download is always the original.
+    public var filterRecipe: FilterRecipe? = nil
+
+    public var isHidden: Bool { hidden == true }
+}

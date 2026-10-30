@@ -8,8 +8,23 @@ Per [COST_MODEL.md](COST_MODEL.md), egress cost makes **Cloudflare R2** the reco
 
 | Option | Components | Trade-off |
 |---|---|---|
-| **A. All-Cloudflare (recommended for MVP)** | Workers (API), R2 (media), D1 or KV (metadata), Cron Triggers (expiry), Queues | One vendor, one bill, simplest. D1/Workers pricing **not verified** |
+| **A. All-Cloudflare (recommended for MVP)** | Workers (API), R2 (media), D1 or KV (metadata), Cron Triggers (expiry), Queues | One vendor, one bill, simplest. Pricing verified below |
 | **B. Hybrid** | Azure Functions (API), Azure SQL or Cosmos (metadata), R2 via its S3-compatible API (media) | Fits a team that already knows Azure; two vendors |
+
+### Option A pricing (verified 30 Oct 2026)
+
+Taken from Cloudflare's pricing pages for [Workers](https://developers.cloudflare.com/workers/platform/pricing/), [D1](https://developers.cloudflare.com/d1/platform/pricing/), [Queues](https://developers.cloudflare.com/queues/platform/pricing/) and [R2](https://developers.cloudflare.com/r2/pricing/). None of them charge for egress.
+
+| Service | Workers Free (hard daily limits) | Workers Paid ($5/month minimum) |
+|---|---|---|
+| Workers | 100,000 requests/day; 10 ms CPU per invocation | 10M requests/month included, then $0.30/million; 30M CPU-ms included, then $0.02/million CPU-ms |
+| D1 | 5M rows read/day; 100,000 rows written/day; 5 GB total | 25B rows read/month included, then $0.001/million; 50M rows written included, then $1.00/million; 5 GB included, then $0.75/GB-month |
+| Queues | 10,000 operations/day; 24-hour retention | 1M operations/month included, then $0.40/million |
+| Cron Triggers | Billed as Worker invocations | Billed as Worker invocations; up to 15 minutes CPU each |
+
+R2 is billed separately from the Workers plan. Each month, 10 GB-month of Standard storage, 1M Class A operations and 10M Class B operations are free. Beyond that, Standard storage costs $0.015/GB-month, Class A $4.50/million and Class B $0.36/million. Usage is rounded up to the next billing unit. The free tier does not cover Infrequent Access storage.
+
+On the free plan, Workers, D1 and Queues return errors when they reach their limits, so they can't add charges. R2 can bill overage. The dev account has a $0.01 budget alert, which sends email only and does not cap usage.
 
 The diagrams below are platform-neutral ("API", "Metadata DB", "Media store").
 
@@ -158,7 +173,7 @@ stateDiagram-v2
 
 ## 9. Open technical questions
 
-- Verified pricing for Workers, D1 and Queues (option A) or Azure Functions (option B).
+- Verified pricing for Azure Functions (option B). Option A pricing is in section 1.
 - Server-side validation of Apple transactions: App Store Server API and notifications handling.
 - How the QR token survives the install step (v1: rescan or PIN; later: App Clip).
 - Resumable upload mechanics on R2 (multipart with pre-signed parts).
