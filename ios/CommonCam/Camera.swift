@@ -86,9 +86,10 @@ final class Camera: NSObject, @unchecked Sendable {
         let rotation = AVCaptureDevice.RotationCoordinator(device: device, previewLayer: nil)
         rotationObservation = rotation.observe(\.videoRotationAngleForHorizonLevelPreview, options: [.initial, .new]) {
             [weak self] coordinator, _ in
+            guard let self else { return }
             let angle = coordinator.videoRotationAngleForHorizonLevelPreview
-            self?.queue.async {
-                guard let connection = self?.frames.connection(with: .video), connection.isVideoRotationAngleSupported(angle) else { return }
+            queue.async { [self] in
+                guard let connection = frames.connection(with: .video), connection.isVideoRotationAngleSupported(angle) else { return }
                 connection.videoRotationAngle = angle
             }
         }
