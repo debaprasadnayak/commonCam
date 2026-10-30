@@ -27,9 +27,14 @@ public struct QueuedUpload: Codable, Equatable, Identifiable, Sendable {
     var flaggedSensitive: Bool?
     /// HTTP status that made the server refuse this shot for good; it is no longer retried.
     public internal(set) var failure: Int?
+    /// When the server first refused this shot because the group's storage was full (413); nil once it got through.
+    public internal(set) var storageFullSince: Date?
 
     /// Still on its way to the gallery (the "pending" badge).
     public var isPending: Bool { failure == nil }
+
+    /// Paused because the group's storage is full; it resumes by itself once the host adds space.
+    public var isWaitingForStorage: Bool { isPending && storageFullSince != nil }
 }
 
 /// The persisted, resumable queue of shots to share.
@@ -38,7 +43,8 @@ public struct QueuedUpload: Codable, Equatable, Identifiable, Sendable {
 /// so app termination, a device restart or going offline never loses a shot: `run()` picks up where it left off,
 /// asking the server which parts it already has and sending only the rest.
 public actor UploadQueue {
-    /// SPEC: when the group's storage is full, shots stay queued on the phone this long before giving up.
+    /// SPEC: when the group's storage is full, shots stay queued on the phone this long (from the first refusal)
+    /// before giving up.
     public static let storageFullGracePeriod: TimeInterval = 24 * 60 * 60
 
     private let directory: URL
@@ -129,9 +135,11 @@ public actor UploadQueue {
             } catch let error as APIError where Self.isPermanent(error) {
                 _ = try? update(id) { $0.failure = error.statusCode }
             } catch let error as APIError where error.statusCode == 413 {
-                if let upload = uploads.first(where: { $0.id == id }),
-                   now().timeIntervalSince(upload.createdAt) > Self.storageFullGracePeriod {
-                    _ = try? update(id) { $0.failure = 413 }
+                let now = now()
+                _ = try? update(id) { upload in
+                    let since = upload.storageFullSince ?? now
+                    upload.storageFullSince = since
+                    if now.timeIntervalSince(since) > Self.storageFullGracePeriod { upload.failure = 413 }
                 }
             } catch {
                 // Offline, timed out, server hiccup: retried on the next run.
@@ -148,6 +156,7 @@ public actor UploadQueue {
                 $0.itemID = started.itemId
                 $0.partSize = started.partSize
                 $0.partCount = started.partCount
+                $0.storageFullSince = nil
             }
         }
         guard let itemID = upload.itemID else { return nil }

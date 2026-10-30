@@ -185,11 +185,39 @@ struct UploadQueueTests {
         _ = try await makeQueue(now: { start }).enqueue(photo(5), in: "g1")
         await server.refuseEverything(with: APIError(statusCode: 413))
 
-        await makeQueue(now: { start.addingTimeInterval(23 * 3600) }).run()
+        await makeQueue(now: { start.addingTimeInterval(1 * 3600) }).run()
+        #expect(await makeQueue().uploads.first?.isWaitingForStorage == true)
+
+        await makeQueue(now: { start.addingTimeInterval(24 * 3600) }).run()
         #expect(await makeQueue().uploads.first?.failure == nil)
 
-        await makeQueue(now: { start.addingTimeInterval(25 * 3600) }).run()
+        await makeQueue(now: { start.addingTimeInterval(25.5 * 3600) }).run()
         #expect(await makeQueue().uploads.first?.failure == 413)
+        #expect(await makeQueue().uploads.first?.isWaitingForStorage == false)
+    }
+
+    @Test func the24HoursCountFromWhenStorageWasFirstFoundFull() async throws {
+        let start = Date.now
+        _ = try await makeQueue(now: { start }).enqueue(photo(5), in: "g1")
+        await server.refuseEverything(with: APIError(statusCode: 413))
+
+        await makeQueue(now: { start.addingTimeInterval(23 * 3600) }).run()
+        await makeQueue(now: { start.addingTimeInterval(25 * 3600) }).run()
+
+        #expect(await makeQueue().uploads.first?.failure == nil)
+    }
+
+    @Test func aShotWaitingForStorageGoesThroughOnceThereIsRoom() async throws {
+        let queue = makeQueue()
+        _ = try await queue.enqueue(photo(5), in: "g1")
+        await server.refuseEverything(with: APIError(statusCode: 413))
+        await queue.run()
+
+        await server.refuseEverything(with: nil)
+        let confirmed = await queue.run()
+
+        #expect(confirmed.count == 1)
+        #expect(await queue.uploads.isEmpty)
     }
 
     @Test func theFilterChosenAtCaptureSurvivesARelaunchAndIsSentOnConfirm() async throws {

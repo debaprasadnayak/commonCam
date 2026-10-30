@@ -47,6 +47,7 @@ struct HostGroupView: View {
                 NavigationLink("Shared gallery") { GalleryView(api: api, group: group) }
             }
             if isHost || invite != nil {
+                StorageSection(api: api, group: group)
                 UpgradeSection(api: api, group: $group)
                 ApprovalSection(api: api, group: group)
                 ReportsSection(api: api, group: group)
