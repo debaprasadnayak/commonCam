@@ -1,18 +1,29 @@
 import { env } from "cloudflare:test";
 import { exports } from "cloudflare:workers";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { setPushSenderForTests, type Push } from "../src/push";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { syncStorageWarnings, type Push } from "../src/push";
 import { signTransaction } from "./support/fakeAppStore";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const HOUR_MS = 60 * 60 * 1000;
 
+// Pushes the real APNs sender posted; tests stub Apple's reply with `apnsReply`.
 let sent: Push[];
+let apnsReply: () => Response;
 beforeEach(() => {
   sent = [];
-  setPushSenderForTests({ send: async (push) => void sent.push(push) });
+  apnsReply = () => new Response(null, { status: 200 });
+  const realFetch = globalThis.fetch;
+  vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+    const request = new Request(input, init);
+    const url = new URL(request.url);
+    if (url.host !== "api.sandbox.push.apple.com") return realFetch(input, init);
+    const body = await request.json<{ aps: { alert: { title: string; body: string } }; groupId: string; kind: Push["kind"] }>();
+    sent.push({ deviceToken: url.pathname.split("/").pop()!, groupId: body.groupId, kind: body.kind, ...body.aps.alert });
+    return apnsReply();
+  });
 });
-afterEach(() => setPushSenderForTests(null));
+afterEach(() => vi.restoreAllMocks());
 
 function api(path: string, init: RequestInit & { token?: string } = {}) {
   const headers = new Headers(init.headers);
@@ -175,7 +186,7 @@ describe("grace reminders (SPEC.md section 9)", () => {
   });
 
   it("a failing push does not stop the lifecycle job", async () => {
-    setPushSenderForTests({ send: async () => { throw new Error("APNs down"); } });
+    apnsReply = () => new Response('{"reason":"InternalServerError"}', { status: 500 });
     const group = await newPartyGroup("dev-fail");
     await registerPush("dev-fail", "06".repeat(32));
     await endAt(group.id, Date.now() - HOUR_MS);
@@ -252,10 +263,10 @@ describe("storage warnings (SPEC.md section 8)", () => {
   });
 
   it("skips quietly while APNs isn't configured", async () => {
-    setPushSenderForTests(null);
     const group = await newPartyGroup("dev-noapns");
     await registerPush("dev-noapns", "16".repeat(32));
-    await fillTo(group.id, 25 * GB - 10);
-    expect((await share("dev-noapns", group.id, 10)).status).toBe(201);
+    await fillTo(group.id, 25 * GB);
+    await syncStorageWarnings({ ...env, APNS_PRIVATE_KEY: undefined }, group.id);
+    expect(sent).toEqual([]);
   });
 });

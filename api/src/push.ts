@@ -18,15 +18,7 @@ export interface PushSender {
   send(push: Push): Promise<"unregistered" | void>;
 }
 
-let testSender: PushSender | null = null;
-
-/** Worker tests swap in a fake; pass null to restore the real one. */
-export function setPushSenderForTests(sender: PushSender | null) {
-  testSender = sender;
-}
-
 function pushSender(env: Env): PushSender | null {
-  if (testSender) return testSender;
   const config = apnsConfig(env);
   return config && apnsSender(config);
 }
