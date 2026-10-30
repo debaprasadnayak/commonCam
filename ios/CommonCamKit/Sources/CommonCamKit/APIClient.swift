@@ -11,6 +11,20 @@ public struct EventGroup: Codable, Equatable, Identifiable, Sendable {
     public let storageUsedBytes: Int64
     public let startsAt: Date
     public let endsAt: Date
+
+    public init(
+        id: String, tier: String, state: String, peopleCap: Int, storageCapBytes: Int64, storageUsedBytes: Int64 = 0,
+        startsAt: Date, endsAt: Date
+    ) {
+        self.id = id
+        self.tier = tier
+        self.state = state
+        self.peopleCap = peopleCap
+        self.storageCapBytes = storageCapBytes
+        self.storageUsedBytes = storageUsedBytes
+        self.startsAt = startsAt
+        self.endsAt = endsAt
+    }
 }
 
 /// What the host shows as a QR code. `joinUrl` is a universal link that falls back to the App Store.
@@ -57,6 +71,10 @@ struct PinState: Decodable {
 
 public struct APIError: Error, Equatable {
     public let statusCode: Int
+
+    public init(statusCode: Int) {
+        self.statusCode = statusCode
+    }
 }
 
 /// Talks to the commonCam Worker API. Every request carries the device token.
@@ -77,6 +95,12 @@ public struct APIClient: Sendable {
 
     public func myGroups() async throws -> [EventGroup] {
         try await send("GET", "groups")
+    }
+
+    /// Activates a paid group; `signedTransaction` is StoreKit's `VerificationResult.jwsRepresentation`.
+    public func createPaidGroup(tier: PaidTier, signedTransaction: String) async throws -> EventGroup {
+        let body = try JSONEncoder().encode(["tier": tier.rawValue, "signedTransaction": signedTransaction])
+        return try await send("POST", "groups", body: body)
     }
 
     public func invite(for groupID: String) async throws -> Invite {

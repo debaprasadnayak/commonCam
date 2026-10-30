@@ -97,8 +97,8 @@ describe("approve-new-members toggle", () => {
 
     expect(await off.json()).toEqual({ approvalRequired: false });
     expect((await join("guest-off", qrToken)).status).toBe(201);
-    const fresh = await (await api("/groups", { method: "POST", token: "host-off", body: JSON.stringify({ tier: "taster" }) })).json<any>();
-    expect(await (await api(`/groups/${fresh.id}/approval`, { token: "host-off" })).json()).toEqual({ approvalRequired: false });
+    const fresh = await (await api("/groups", { method: "POST", token: "host-off-fresh", body: JSON.stringify({ tier: "taster" }) })).json<any>();
+    expect(await (await api(`/groups/${fresh.id}/approval`, { token: "host-off-fresh" })).json()).toEqual({ approvalRequired: false });
   });
 
   it("lets an active co-host act on requests too", async () => {

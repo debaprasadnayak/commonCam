@@ -16,8 +16,15 @@ struct CommonCamApp: App {
 
     var body: some Scene {
         WindowGroup {
-            ContentView(api: api)
+            // As a test host the UI stays idle so its launch work (StoreKit, API) can't race the tests.
+            if ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil {
+                Text("Running tests")
+            } else {
+                ContentView(api: api, purchaser: TierPurchaser { [api] tier, signedTransaction in
+                    try await api.createPaidGroup(tier: tier, signedTransaction: signedTransaction)
+                })
                 .environment(uploads)
+            }
         }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active { Task { await uploads.send() } }

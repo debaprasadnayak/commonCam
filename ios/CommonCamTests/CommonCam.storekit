@@ -1,0 +1,63 @@
+{
+  "identifier" : "C0C0CA11",
+  "nonRenewingSubscriptions" : [
+
+  ],
+  "products" : [
+    {
+      "displayPrice" : "4.99",
+      "familyShareable" : false,
+      "internalID" : "6700000001",
+      "localizations" : [
+        {
+          "description" : "10 people, 2 days, 5 GB. Placeholder price.",
+          "displayName" : "Pocket",
+          "locale" : "en_US"
+        }
+      ],
+      "productID" : "app.commoncam.tier.pocket",
+      "referenceName" : "Pocket",
+      "type" : "Consumable"
+    },
+    {
+      "displayPrice" : "9.99",
+      "familyShareable" : false,
+      "internalID" : "6700000002",
+      "localizations" : [
+        {
+          "description" : "25 people, 5 days, 25 GB. Placeholder price.",
+          "displayName" : "Party",
+          "locale" : "en_US"
+        }
+      ],
+      "productID" : "app.commoncam.tier.party",
+      "referenceName" : "Party",
+      "type" : "Consumable"
+    },
+    {
+      "displayPrice" : "24.99",
+      "familyShareable" : false,
+      "internalID" : "6700000003",
+      "localizations" : [
+        {
+          "description" : "75 people, 10 days, 100 GB. Placeholder price.",
+          "displayName" : "Festival",
+          "locale" : "en_US"
+        }
+      ],
+      "productID" : "app.commoncam.tier.festival",
+      "referenceName" : "Festival",
+      "type" : "Consumable"
+    }
+  ],
+  "settings" : {
+    "_failTransactionsEnabled" : false
+  },
+  "subscriptionGroups" : [
+
+  ],
+  "version" : {
+    "major" : 3,
+    "minor" : 0
+  }
+}

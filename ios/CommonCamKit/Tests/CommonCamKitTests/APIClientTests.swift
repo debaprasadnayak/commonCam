@@ -299,6 +299,20 @@ private let otter = Member(
         await #expect(throws: APIError.self) { try await client.myGroups() }
     }
 
+    @Test func activatesAPaidGroupWithTheSignedTransaction() async throws {
+        StubURLProtocol.statusCode = 201
+        StubURLProtocol.responseBody = Data(groupJSON.utf8)
+
+        _ = try await client.createPaidGroup(tier: .party, signedTransaction: "header.payload.signature")
+
+        let request = try #require(StubURLProtocol.requests.first)
+        #expect(request.httpMethod == "POST")
+        #expect(request.url?.absoluteString == "https://api.test/groups")
+        #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer device-token")
+        let body = try JSONSerialization.jsonObject(with: try #require(request.httpBody)) as? [String: String]
+        #expect(body == ["tier": "party", "signedTransaction": "header.payload.signature"])
+    }
+
     @Test func listsTheSharedGallery() async throws {
         StubURLProtocol.responseBody = Data("[\(itemJSON)]".utf8)
 
@@ -405,5 +419,20 @@ private let otter = Member(
         let items = try await client.gallery(of: "g1")
 
         #expect(items.map(\.filterRecipe) == [FilterRecipe(id: "ink", version: 2, params: ["contrast": 1.2]), nil])
+    }
+}
+
+@Suite struct PaidTierTests {
+    @Test func offersPocketPartyAndFestivalWithPartyPreselected() {
+        #expect(PaidTier.allCases == [.pocket, .party, .festival])
+        #expect(PaidTier.preselected == .party)
+    }
+
+    @Test func mapsToTheAppStoreProductsTheServerExpects() {
+        #expect(PaidTier.allCases.map(\.productID) == [
+            "app.commoncam.tier.pocket", "app.commoncam.tier.party", "app.commoncam.tier.festival",
+        ])
+        #expect(PaidTier(productID: "app.commoncam.tier.festival") == .festival)
+        #expect(PaidTier(productID: "app.commoncam.tier.other") == nil)
     }
 }
