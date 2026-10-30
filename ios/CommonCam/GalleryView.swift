@@ -13,6 +13,7 @@ struct GalleryView: View {
     @State private var shownContributor: Contributor?
     @State private var saveProgress: BulkSaveProgress?
     @State private var saveNotice: String?
+    @State private var pendingDelete: GalleryItem?
 
     var body: some View {
         ScrollView {
@@ -45,6 +46,9 @@ struct GalleryView: View {
                                 Task { await save([item]) }
                             }
                             .disabled(saveProgress != nil)
+                            if item.canDelete {
+                                Button("Delete", systemImage: "trash", role: .destructive) { pendingDelete = item }
+                            }
                         }
                 }
             }
@@ -68,6 +72,14 @@ struct GalleryView: View {
             }
         }
         .refreshable { await reload() }
+        .confirmationDialog(
+            "Delete this photo for everyone?",
+            isPresented: Binding(get: { pendingDelete != nil }, set: { if !$0 { pendingDelete = nil } }),
+            titleVisibility: .visible,
+            presenting: pendingDelete
+        ) { item in
+            Button("Delete", role: .destructive) { Task { await delete(item) } }
+        }
     }
 
     private func reload() async {
@@ -92,6 +104,18 @@ struct GalleryView: View {
             "Saved \(report.saved.count) photo\(report.saved.count == 1 ? "" : "s") to Photos."
         } else {
             "Saved \(report.saved.count) of \(toSave.count) to Photos; \(report.failed.count) couldn't be saved. Try those again."
+        }
+    }
+
+    private func delete(_ item: GalleryItem) async {
+        do {
+            try await api.deleteItem(item.id, in: group.id)
+            items.removeAll { $0.id == item.id }
+            errorMessage = nil
+        } catch let error as APIError {
+            errorMessage = error.statusCode == 403 ? "You can only delete your own photos." : "Couldn't delete the photo (error \(error.statusCode))."
+        } catch {
+            errorMessage = "Couldn't delete the photo: \(error.localizedDescription)"
         }
     }
 

@@ -1,3 +1,4 @@
+import { isHostOrCoHost } from "./hostControls";
 import type { Env } from "./index";
 
 const UPLOAD_URL_TTL_S = 15 * 60;
@@ -19,6 +20,7 @@ interface ItemRow {
   bytes: number;
   object_key: string;
   created_at: string;
+  contributor_device_id: string;
   display_name: string | null;
   colour: string | null;
 }
@@ -110,7 +112,7 @@ async function confirmItem(request: Request, env: Env, groupId: string, deviceId
         .first<{ id: string; bytes: number; object_key: string; status: string }>()
     : null;
   if (!item) return new Response("Unknown item", { status: 404 });
-  if (item.status === "ready") return Response.json(await itemJson(env, await findItem(env, item.id), new URL(request.url).origin));
+  if (item.status === "ready") return Response.json(await itemJson(env, await findItem(env, item.id), new URL(request.url).origin, true));
   if (!isOpen(caller.group)) return new Response("This group is no longer open", { status: 410 });
 
   const stored = await env.MEDIA.head(item.object_key);
@@ -132,18 +134,19 @@ async function confirmItem(request: Request, env: Env, groupId: string, deviceId
     return new Response("This group's storage is full", { status: 413 });
   }
   await env.DB.prepare("UPDATE items SET status = 'ready' WHERE id = ?").bind(item.id).run();
-  return Response.json(await itemJson(env, await findItem(env, item.id), new URL(request.url).origin), { status: 201 });
+  return Response.json(await itemJson(env, await findItem(env, item.id), new URL(request.url).origin, true), { status: 201 });
 }
 
 async function gallery(url: URL, env: Env, groupId: string, deviceId: string) {
   if (!(await findCaller(env, groupId, deviceId))) return new Response("Not found", { status: 404 });
+  const moderator = await isHostOrCoHost(env, groupId, deviceId);
   const { results } = await env.DB.prepare(`${ITEM_SELECT} WHERE i.group_id = ? AND i.status = 'ready' ORDER BY i.created_at DESC, i.rowid DESC`)
     .bind(groupId)
     .all<ItemRow>();
-  return Response.json(await Promise.all(results.map((row) => itemJson(env, row, url.origin))));
+  return Response.json(await Promise.all(results.map((row) => itemJson(env, row, url.origin, moderator || row.contributor_device_id === deviceId))));
 }
 
-const ITEM_SELECT = `SELECT i.id, i.member_id, i.type, i.content_type, i.bytes, i.object_key, i.created_at, m.display_name, m.colour
+const ITEM_SELECT = `SELECT i.id, i.member_id, i.type, i.content_type, i.bytes, i.object_key, i.created_at, i.contributor_device_id, m.display_name, m.colour
   FROM items i LEFT JOIN members m ON m.id = i.member_id`;
 
 async function findItem(env: Env, itemId: string): Promise<ItemRow> {
@@ -167,7 +170,8 @@ function isOpen(group: Caller["group"]) {
   return group.state === "Active" && Date.parse(group.ends_at) > Date.now();
 }
 
-async function itemJson(env: Env, row: ItemRow, origin: string) {
+/** `canDelete`: whether the caller may delete it (their own item, or they are host/co-host; see deleteItem.ts). */
+async function itemJson(env: Env, row: ItemRow, origin: string, canDelete: boolean) {
   const exp = String(Math.floor(Date.now() / 1000) + DOWNLOAD_URL_TTL_S);
   return {
     id: row.id,
@@ -180,6 +184,7 @@ async function itemJson(env: Env, row: ItemRow, origin: string) {
       : { memberId: null, ...HOST_CONTRIBUTOR },
     downloadUrl: await signedUrl(env, origin, "GET", row.object_key, exp, "", ""),
     downloadUrlExpiresAt: new Date(Number(exp) * 1000).toISOString(),
+    canDelete,
   };
 }
 

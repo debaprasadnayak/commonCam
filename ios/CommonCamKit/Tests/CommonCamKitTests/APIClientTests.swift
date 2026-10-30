@@ -55,14 +55,15 @@ private let memberJSON = """
 private let itemJSON = """
 {"id":"i1","type":"photo","contentType":"image/heic","bytes":4,"createdAt":"2026-10-30T08:00:00.000Z",
  "contributor":{"memberId":"m1","displayName":"Dancing Otter","colour":"#FF8800"},
- "downloadUrl":"https://api.test/media/groups/g1/i1?exp=1&sig=s","downloadUrlExpiresAt":"2026-10-30T08:15:00.000Z"}
+ "downloadUrl":"https://api.test/media/groups/g1/i1?exp=1&sig=s","downloadUrlExpiresAt":"2026-10-30T08:15:00.000Z","canDelete":true}
 """
 
 private let otterPhoto = GalleryItem(
     id: "i1", type: "photo", contentType: "image/heic", bytes: 4, createdAt: Date(timeIntervalSince1970: 1_793_347_200),
     contributor: Contributor(memberId: "m1", displayName: "Dancing Otter", colour: "#FF8800"),
     downloadUrl: URL(string: "https://api.test/media/groups/g1/i1?exp=1&sig=s")!,
-    downloadUrlExpiresAt: Date(timeIntervalSince1970: 1_793_348_100)
+    downloadUrlExpiresAt: Date(timeIntervalSince1970: 1_793_348_100),
+    canDelete: true
 )
 
 private let otter = Member(
@@ -342,5 +343,23 @@ private let otter = Member(
 
         #expect(items == [otterPhoto])
         #expect(StubURLProtocol.requests.first?.url?.absoluteString == "https://api.test/groups/g1/items")
+    }
+
+    @Test func deletesAnItem() async throws {
+        StubURLProtocol.statusCode = 204
+        StubURLProtocol.responseBody = Data()
+
+        try await client.deleteItem("i1", in: "g1")
+
+        let request = try #require(StubURLProtocol.requests.first)
+        #expect(request.httpMethod == "DELETE")
+        #expect(request.url?.absoluteString == "https://api.test/groups/g1/items/i1")
+    }
+
+    @Test func surfacesARefusedDeleteAsItsStatusCode() async throws {
+        StubURLProtocol.statusCode = 403
+        StubURLProtocol.responseBody = Data()
+
+        await #expect(throws: APIError(statusCode: 403)) { try await client.deleteItem("i1", in: "g1") }
     }
 }
