@@ -1,4 +1,7 @@
+import CoreImage
 import Foundation
+import ImageIO
+import UniformTypeIdentifiers
 import Testing
 @testable import CommonCamKit
 
@@ -119,5 +122,77 @@ struct AutoSaveTests {
 
         let broken = PhotoSaver(library: FakePhotoLibrary(failing: [Data("shot".utf8)]), download: downloader())
         #expect(await broken.autoSave(photo, enabled: true) == .failed)
+    }
+}
+
+/// A small, fully red PNG: something `FilterRenderer` can decode, unlike the placeholder bytes above.
+private let redPNG: Data = {
+    let image = CIImage(color: CIColor(red: 0.9, green: 0.1, blue: 0.1, colorSpace: CGColorSpace(name: CGColorSpace.sRGB)!)!)
+        .cropped(to: CGRect(x: 0, y: 0, width: 8, height: 8))
+    return FilterRenderer.context.pngRepresentation(
+        of: image, format: .RGBA8, colorSpace: CGColorSpace(name: CGColorSpace.sRGB)!
+    )!
+}()
+
+/// The first pixel's sRGB channels, and whether the data is a JPEG.
+private func firstPixel(of data: Data) throws -> (rgb: [Int], isJPEG: Bool) {
+    let source = try #require(CGImageSourceCreateWithData(data as CFData, nil))
+    let image = try #require(CGImageSourceCreateImageAtIndex(source, 0, nil))
+    var out = [UInt8](repeating: 0, count: 4)
+    let context = CGContext(
+        data: &out, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 4,
+        space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+    )!
+    context.draw(image, in: CGRect(x: 0, y: 0, width: 1, height: 1))
+    return (out.prefix(3).map(Int.init), CGImageSourceGetType(source) as String? == UTType.jpeg.identifier)
+}
+
+private func isGrey(_ rgb: [Int]) -> Bool {
+    abs(rgb[0] - rgb[1]) <= 2 && abs(rgb[1] - rgb[2]) <= 2
+}
+
+struct FilteredSaveTests {
+    private let ink = FilterRecipe(id: "ink", version: 1)
+
+    private func photo(_ id: String, recipe: FilterRecipe?) -> GalleryItem {
+        var photo = item(id)
+        photo.filterRecipe = recipe
+        return photo
+    }
+
+    @Test func savesTheFilteredVersionOfItemsThatHaveARecipeAndOriginalsOfThoseWithout() async throws {
+        let library = FakePhotoLibrary()
+        let saver = PhotoSaver(library: library, download: { _ in redPNG })
+
+        let report = await saver.save([photo("a", recipe: ink), photo("b", recipe: nil)])
+
+        #expect(report.saved == ["a", "b"])
+        let added = await library.added
+        try #require(added.count == 2)
+        let filtered = try firstPixel(of: added[0])
+        #expect(filtered.isJPEG && isGrey(filtered.rgb))
+        #expect(added[1] == redPNG)
+    }
+
+    @Test func savesTheOriginalWhenThisBuildCannotRenderTheRecipe() async {
+        let library = FakePhotoLibrary()
+        let saver = PhotoSaver(library: library, download: { _ in redPNG })
+
+        let report = await saver.save([photo("a", recipe: FilterRecipe(id: "from-the-future", version: 1))])
+
+        #expect(report.saved == ["a"])
+        #expect(await library.added == [redPNG])
+    }
+
+    @Test func autoSavesTheFilteredVersionOfACaptureWithARecipe() async throws {
+        let library = FakePhotoLibrary()
+        let saver = PhotoSaver(library: library, download: downloader())
+
+        #expect(await saver.autoSave(CapturedPhoto(data: redPNG, format: .jpeg, filterRecipe: ink), enabled: true) == .saved)
+
+        let added = await library.added
+        try #require(added.count == 1)
+        let filtered = try firstPixel(of: added[0])
+        #expect(filtered.isJPEG && isGrey(filtered.rgb))
     }
 }

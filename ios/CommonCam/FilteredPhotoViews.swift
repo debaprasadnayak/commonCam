@@ -41,8 +41,11 @@ struct FilteredThumbnail: View {
         }
         .task(id: item.id) {
             guard let original = try? await download(item.downloadUrl) else { return }
-            image = (try? render(original, with: item.filterRecipe, maxPixelSize: 400))
-                ?? (try? render(original, with: nil, maxPixelSize: 400))
+            let recipe = item.filterRecipe
+            // Off the main actor: face-based looks run Vision while rendering.
+            image = await Task.detached {
+                (try? render(original, with: recipe, maxPixelSize: 400)) ?? (try? render(original, with: nil, maxPixelSize: 400))
+            }.value
         }
     }
 }
