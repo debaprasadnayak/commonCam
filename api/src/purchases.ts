@@ -1,3 +1,4 @@
+import { countGroupCreated } from "./analytics";
 import { InvalidTransaction, verifySignedTransaction } from "./appStore";
 import { insertGroup, newGroupRow, toJson } from "./groups";
 import type { Env } from "./index";
@@ -47,6 +48,7 @@ export async function createPaidGroup(
         transaction.environment ?? null,
         new Date().toISOString(),
       ),
+      countGroupCreated(env.DB, row.id),
     ]);
   } catch (error) {
     if (String(error).includes("UNIQUE constraint failed: orders.apple_transaction_id")) {
