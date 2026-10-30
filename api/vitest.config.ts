@@ -13,6 +13,7 @@ export default defineConfig(async () => {
         miniflare: {
           bindings: {
             TEST_MIGRATIONS: migrations,
+            MEDIA_SIGNING_KEY: "test-media-signing-key",
             TEST_APPLE_PKI: appStore,
             APPLE_ROOT_CA_G3: appStore.chain[2],
           },

@@ -8,6 +8,7 @@ export interface GroupRow {
   state: string;
   people_cap: number;
   storage_cap_bytes: number;
+  storage_used_bytes: number;
   starts_at: string;
   ends_at: string;
 }
@@ -22,6 +23,7 @@ export function newGroupRow(tier: Tier): GroupRow {
     state: "Active",
     people_cap: limits.peopleCap,
     storage_cap_bytes: limits.storageCapBytes,
+    storage_used_bytes: 0,
     starts_at: startsAt.toISOString(),
     ends_at: new Date(startsAt.getTime() + limits.days * DAY_MS).toISOString(),
   };
@@ -54,6 +56,7 @@ export function toJson(row: GroupRow) {
     state: row.state,
     peopleCap: row.people_cap,
     storageCapBytes: row.storage_cap_bytes,
+    storageUsedBytes: row.storage_used_bytes,
     startsAt: row.starts_at,
     endsAt: row.ends_at,
   };

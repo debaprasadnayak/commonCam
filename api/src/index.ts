@@ -1,18 +1,30 @@
+import { handleApproval } from "./approval";
 import { insertTasterGroup, newGroupRow, toJson, type GroupRow } from "./groups";
+import { handleHostControls } from "./hostControls";
+import { handleJoin, handlePublic } from "./join";
+import { handlePin } from "./pin";
+import { handleMedia, handleSignedMedia } from "./media";
 import { createPaidGroup } from "./purchases";
 import { isPaidTier } from "./tiers";
 
 export interface Env {
   DB: D1Database;
   MEDIA: R2Bucket;
+  MEDIA_SIGNING_KEY: string;
   /** DER base64 of the root App Store transactions must chain to (Apple Root CA - G3). */
   APPLE_ROOT_CA_G3: string;
   APPLE_BUNDLE_ID: string;
 }
 
+export { toJson, type GroupRow } from "./groups";
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
+    const publicResponse = handlePublic(url);
+    if (publicResponse) return publicResponse;
+    const signedMediaResponse = await handleSignedMedia(request, url, env);
+    if (signedMediaResponse) return signedMediaResponse;
     const deviceToken = request.headers.get("Authorization")?.match(/^Bearer (\S+)$/)?.[1];
     if (!deviceToken) return new Response("Missing device token", { status: 401 });
     const deviceId = await sha256Hex(deviceToken);
@@ -31,13 +43,27 @@ export default {
 
     if (url.pathname === "/groups" && request.method === "GET") {
       const { results } = await env.DB.prepare(
-        `SELECT id, tier, state, people_cap, storage_cap_bytes, starts_at, ends_at
+        `SELECT id, tier, state, people_cap, storage_cap_bytes, storage_used_bytes, starts_at, ends_at
          FROM groups WHERE host_device_id = ? ORDER BY starts_at DESC`,
       )
         .bind(deviceId)
         .all<GroupRow>();
       return Response.json(results.map(toJson));
     }
+
+    const approvalResponse = await handleApproval(request, url, env, deviceId);
+    if (approvalResponse) return approvalResponse;
+
+    const pinResponse = await handlePin(request, url, env, deviceId);
+    if (pinResponse) return pinResponse;
+
+    const joinResponse = await handleJoin(request, url, env, deviceId);
+    if (joinResponse) return joinResponse;
+    const hostControlsResponse = await handleHostControls(request, url, env, deviceId);
+    if (hostControlsResponse) return hostControlsResponse;
+
+    const mediaResponse = await handleMedia(request, url, env, deviceId);
+    if (mediaResponse) return mediaResponse;
 
     return new Response("Not found", { status: 404 });
   },

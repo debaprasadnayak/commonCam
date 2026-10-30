@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "wrangler d1 migrations apply DB --local && wrangler dev",
+    "dev": "test -f .dev.vars || cp .dev.vars.example .dev.vars; wrangler d1 migrations apply DB --local && wrangler dev",
     "test": "vitest run"
   },
   "devDependencies": {

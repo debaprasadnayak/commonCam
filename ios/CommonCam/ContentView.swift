@@ -10,7 +10,9 @@ struct ContentView: View {
     @State private var products: [PaidTier: Product] = [:]
     @State private var selectedTier = PaidTier.preselected
     @State private var errorMessage: String?
-    @State private var isBusy = false
+    @State private var isCreating = false
+    @State private var joinRequest: JoinRequest?
+    @State private var joined: [Membership] = []
 
     var body: some View {
         NavigationStack {
@@ -26,29 +28,64 @@ struct ContentView: View {
                     Button("Buy \(products[selectedTier]?.displayName ?? selectedTier.rawValue.capitalized)") {
                         Task { await buy() }
                     }
-                    .disabled(isBusy || products[selectedTier] == nil)
+                    .disabled(isCreating || products[selectedTier] == nil)
                     Button("Create free Taster group") {
                         Task { await createGroup() }
                     }
-                    .disabled(isBusy)
+                    .disabled(isCreating)
+                }
+                Section {
+                    Button("Join a group") { joinRequest = JoinRequest(qrToken: nil) }
                 }
                 if let errorMessage {
                     Section { Text(errorMessage).foregroundStyle(.red) }
                 }
+                if !joined.isEmpty {
+                    Section("Joined") {
+                        ForEach(joined, id: \.group.id) { membership in
+                            NavigationLink {
+                                if membership.isPending {
+                                    GuestGroupView(api: api, membership: membership)
+                                } else {
+                                    HostGroupView(
+                                        api: api, group: membership.group, title: membership.member.displayName, isHost: false
+                                    )
+                                }
+                            } label: {
+                                Text("\(membership.group.tier.capitalized) group as \(membership.member.displayName)"
+                                    + (membership.isPending ? " (awaiting approval)" : ""))
+                            }
+                        }
+                    }
+                }
                 Section("My groups") {
                     ForEach(groups) { group in
-                        VStack(alignment: .leading) {
-                            Text("\(group.tier.capitalized) · \(group.state)").font(.headline)
-                            Text("\(group.peopleCap) people · \(ByteCountFormatter.string(fromByteCount: group.storageCapBytes, countStyle: .binary))")
-                            Text("Ends \(group.endsAt.formatted(date: .abbreviated, time: .shortened))")
-                                .foregroundStyle(.secondary)
+                        NavigationLink {
+                            HostGroupView(api: api, group: group)
+                        } label: {
+                            VStack(alignment: .leading) {
+                                Text("\(group.tier.capitalized) · \(group.state)").font(.headline)
+                                Text("\(group.peopleCap) people · \(ByteCountFormatter.string(fromByteCount: group.storageCapBytes, countStyle: .binary))")
+                                Text("Ends \(group.endsAt.formatted(date: .abbreviated, time: .shortened))")
+                                    .foregroundStyle(.secondary)
+                            }
                         }
                     }
                 }
             }
             .navigationTitle("commonCam")
-            .task { await refresh() }
-            .refreshable { await refresh() }
+            .task { await loadGroups() }
+            .refreshable { await loadGroups() }
+            .onOpenURL { url in
+                if let token = JoinLink.qrToken(from: url) { joinRequest = JoinRequest(qrToken: token) }
+            }
+            .sheet(item: $joinRequest) { request in
+                JoinFlow(api: api, qrToken: request.qrToken) { membership in
+                    joined.removeAll { $0.group.id == membership.group.id }
+                    joined.insert(membership, at: 0)
+                    joinRequest = nil
+                }
+            }
         }
     }
 
@@ -63,7 +100,7 @@ struct ContentView: View {
         }
     }
 
-    private func refresh() async {
+    private func loadGroups() async {
         // Purchases whose activation failed earlier (offline, Ask to Buy) are activated here.
         _ = await purchaser.activateUnfinished()
         do {
@@ -71,13 +108,13 @@ struct ContentView: View {
             groups = try await api.myGroups()
             errorMessage = nil
         } catch {
-            errorMessage = "Couldn't load: \(error.localizedDescription)"
+            errorMessage = "Couldn't load groups: \(error.localizedDescription)"
         }
     }
 
     private func buy() async {
-        isBusy = true
-        defer { isBusy = false }
+        isCreating = true
+        defer { isCreating = false }
         do {
             if let group = try await purchaser.purchase(selectedTier) { groups.insert(group, at: 0) }
             errorMessage = nil
@@ -87,8 +124,8 @@ struct ContentView: View {
     }
 
     private func createGroup() async {
-        isBusy = true
-        defer { isBusy = false }
+        isCreating = true
+        defer { isCreating = false }
         do {
             groups.insert(try await api.createTasterGroup(), at: 0)
             errorMessage = nil
@@ -96,6 +133,37 @@ struct ContentView: View {
             errorMessage = "You've used this device's free Taster. Pick a paid tier for your next group."
         } catch {
             errorMessage = "Couldn't create group: \(error.localizedDescription)"
+        }
+    }
+}
+
+/// A join started from the in-app button (no token yet) or from a scanned universal link.
+struct JoinRequest: Identifiable {
+    let id = UUID()
+    let qrToken: String?
+}
+
+private struct JoinFlow: View {
+    let api: APIClient
+    @State var qrToken: String?
+    let onJoined: (Membership) -> Void
+
+    @State private var pin: String?
+    @State private var isEnteringPin = false
+
+    var body: some View {
+        NavigationStack {
+            if let qrToken {
+                JoinView(api: api, code: .qrToken(qrToken), onJoined: onJoined)
+            } else if let pin {
+                JoinView(api: api, code: .pin(pin), onJoined: onJoined)
+            } else if isEnteringPin {
+                PinEntryView { pin = $0 }
+                    .toolbar { Button("Scan QR") { isEnteringPin = false } }
+            } else {
+                ScannerView { qrToken = $0 }
+                    .toolbar { Button("Enter PIN") { isEnteringPin = true } }
+            }
         }
     }
 }

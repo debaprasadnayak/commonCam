@@ -27,9 +27,15 @@ final class TierPurchaserTests: XCTestCase {
         }
     }
 
-    private func unfinishedCount() async -> Int {
-        var count = 0
-        for await _ in Transaction.unfinished { count += 1 }
+    /// StoreKit applies purchases and `finish()` asynchronously (slow on a loaded machine), so poll briefly.
+    private func unfinishedCount(settlingAt expected: Int) async -> Int {
+        var count = -1
+        for _ in 0..<50 {
+            count = 0
+            for await _ in Transaction.unfinished { count += 1 }
+            if count == expected { break }
+            try? await Task.sleep(for: .milliseconds(100))
+        }
         return count
     }
 
@@ -47,7 +53,7 @@ final class TierPurchaserTests: XCTestCase {
         let activation = try XCTUnwrap(activations.first)
         XCTAssertEqual(activation.tier, .party)
         XCTAssertEqual(try productID(inJWS: activation.jws), "app.commoncam.tier.party")
-        let unfinished = await unfinishedCount()
+        let unfinished = await unfinishedCount(settlingAt: 0)
         XCTAssertEqual(unfinished, 0)
     }
 
@@ -56,23 +62,25 @@ final class TierPurchaserTests: XCTestCase {
             _ = try await purchaser(failingWith: APIError(statusCode: 500)).purchase(.festival)
             XCTFail("Expected the activation error")
         } catch {}
-        let unfinishedAfterFailure = await unfinishedCount()
+        let unfinishedAfterFailure = await unfinishedCount(settlingAt: 1)
         XCTAssertEqual(unfinishedAfterFailure, 1)
 
         let groups = await purchaser().activateUnfinished()
 
         XCTAssertEqual(groups.map(\.tier), ["festival"])
-        let unfinished = await unfinishedCount()
+        let unfinished = await unfinishedCount(settlingAt: 0)
         XCTAssertEqual(unfinished, 0)
     }
 
     func testATransactionTheServerAlreadyUsedIsFinished() async throws {
         _ = try? await purchaser(failingWith: APIError(statusCode: 500)).purchase(.pocket)
+        let unfinishedAfterFailure = await unfinishedCount(settlingAt: 1)
+        XCTAssertEqual(unfinishedAfterFailure, 1)
 
         let groups = await purchaser(failingWith: APIError(statusCode: 409)).activateUnfinished()
 
         XCTAssertEqual(groups, [])
-        let unfinished = await unfinishedCount()
+        let unfinished = await unfinishedCount(settlingAt: 0)
         XCTAssertEqual(unfinished, 0)
     }
 
