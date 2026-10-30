@@ -11,11 +11,20 @@ struct GalleryView: View {
     @State private var uploading = 0
     @State private var errorMessage: String?
     @State private var shownContributor: Contributor?
+    @State private var saveProgress: BulkSaveProgress?
+    @State private var saveNotice: String?
 
     var body: some View {
         ScrollView {
             if let errorMessage {
                 Text(errorMessage).foregroundStyle(.red).padding()
+            }
+            if let saveProgress {
+                ProgressView("Saving to Photos…", value: Double(saveProgress.done), total: Double(max(saveProgress.total, 1)))
+                    .padding()
+            }
+            if let saveNotice {
+                Text(saveNotice).foregroundStyle(.secondary).padding()
             }
             if uploading > 0 {
                 Label("Uploading \(uploading) photo\(uploading == 1 ? "" : "s")…", systemImage: "arrow.up.circle")
@@ -31,11 +40,21 @@ struct GalleryView: View {
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 110), spacing: 2)], spacing: 2) {
                 ForEach(items.contributed(by: shownContributor)) { item in
                     GalleryTile(item: item, isTopContributor: stats.top.map { $0.memberId == item.contributor.memberId } ?? false)
+                        .contextMenu {
+                            Button("Save to Photos", systemImage: "square.and.arrow.down") {
+                                Task { await save([item]) }
+                            }
+                            .disabled(saveProgress != nil)
+                        }
                 }
             }
         }
         .navigationTitle("Gallery")
         .toolbar {
+            Button("Save all to Photos", systemImage: "square.and.arrow.down.on.square") {
+                Task { await saveAll() }
+            }
+            .disabled(items.isEmpty || saveProgress != nil)
             Button("Take photo", systemImage: "camera") { isCameraOpen = true }
         }
         .fullScreenCover(isPresented: $isCameraOpen) {
@@ -55,9 +74,34 @@ struct GalleryView: View {
         if let latest = try? await api.gallery(of: group.id) { items = latest }
     }
 
+    private func saveAll() async {
+        await reload() // fresh download URLs: they expire after 15 minutes
+        await save(items)
+    }
+
+    private func save(_ toSave: [GalleryItem]) async {
+        saveNotice = nil
+        saveProgress = BulkSaveProgress(done: 0, total: toSave.count)
+        let report = await PhotoSaver.live.save(toSave) { progress in
+            await MainActor.run { saveProgress = progress }
+        }
+        saveProgress = nil
+        saveNotice = if report.accessDenied {
+            PhotosAccessMessage.denied
+        } else if report.failed.isEmpty {
+            "Saved \(report.saved.count) photo\(report.saved.count == 1 ? "" : "s") to Photos."
+        } else {
+            "Saved \(report.saved.count) of \(toSave.count) to Photos; \(report.failed.count) couldn't be saved. Try those again."
+        }
+    }
+
     private func share(_ photo: CapturedPhoto) async {
         uploading += 1
         defer { uploading -= 1 }
+        // Local safety net first, so the shot survives even if the upload fails.
+        if await PhotoSaver.live.autoSave(photo, enabled: AutoSaveSetting().isEnabled) == .accessDenied {
+            saveNotice = PhotosAccessMessage.denied
+        }
         do {
             let item = try await api.share(photo, in: group.id)
             items.removeAll { $0.id == item.id }

@@ -55,6 +55,7 @@ struct ContentView: View {
                         }
                     }
                 }
+                PhotosSettingsSection()
             }
             .navigationTitle("commonCam")
             .task { await loadGroups() }
