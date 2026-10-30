@@ -136,7 +136,7 @@ Rationale for deletion over indefinite retention: it limits storage cost and pri
 
 - **Legal / DPO:** items listed in section 10; personal-venture IP check.
 - **Finance:** tier prices, Apple commission and tax.
-- **Engineering:** verified pricing for Cloudflare Workers/D1/Queues or Azure Functions; Apple transaction validation; resumable upload design.
+- **Engineering:** Cloudflare Workers, D1, Queues and R2 pricing verified 30 Oct 2026 (ARCHITECTURE.md section 1), Azure Functions pricing still open; Apple transaction validation; resumable upload design.
 - **Product:** final grace length, Taster limits, app name.
 
 > This document is a planning draft. Review and validate it with Legal, Finance and the Data Privacy Officer before sharing externally or relying on it for decisions.

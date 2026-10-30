@@ -245,6 +245,7 @@
 		0A0000000000000000000062 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				API_BASE_URL = "https://commoncam-api-dev.dev094u.workers.dev";
 				CODE_SIGN_ENTITLEMENTS = CommonCam.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
@@ -267,6 +268,7 @@
 		0A0000000000000000000063 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				API_BASE_URL = "https://commoncam-api-dev.dev094u.workers.dev";
 				CODE_SIGN_ENTITLEMENTS = CommonCam.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
