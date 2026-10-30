@@ -28,6 +28,9 @@ struct HostGroupView: View {
             if let errorMessage {
                 Section { Text(errorMessage).foregroundStyle(.red) }
             }
+            Section {
+                NavigationLink("Shared gallery") { GalleryView(api: api, group: group) }
+            }
             MembersSection(api: api, group: group)
         }
         .navigationTitle(group.tier.capitalized)

@@ -7,7 +7,7 @@ export default defineConfig(async () => {
     plugins: [
       cloudflareTest({
         wrangler: { configPath: "./wrangler.jsonc" },
-        miniflare: { bindings: { TEST_MIGRATIONS: migrations } },
+        miniflare: { bindings: { TEST_MIGRATIONS: migrations, MEDIA_SIGNING_KEY: "test-media-signing-key" } },
       }),
     ],
     test: { setupFiles: ["./test/apply-migrations.ts"] },

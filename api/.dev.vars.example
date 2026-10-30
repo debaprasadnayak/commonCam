@@ -1,0 +1,2 @@
+# Copied to .dev.vars by `npm run dev`. Production sets this with `wrangler secret put MEDIA_SIGNING_KEY`.
+MEDIA_SIGNING_KEY=local-dev-only-media-signing-key

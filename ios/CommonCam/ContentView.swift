@@ -27,8 +27,13 @@ struct ContentView: View {
                     Section("Joined") {
                         ForEach(joined, id: \.group.id) { membership in
                             NavigationLink {
-                                List { MembersSection(api: api, group: membership.group) }
-                                    .navigationTitle(membership.member.displayName)
+                                List {
+                                    Section {
+                                        NavigationLink("Shared gallery") { GalleryView(api: api, group: membership.group) }
+                                    }
+                                    MembersSection(api: api, group: membership.group)
+                                }
+                                .navigationTitle(membership.member.displayName)
                             } label: {
                                 Text("\(membership.group.tier.capitalized) group as \(membership.member.displayName)")
                             }

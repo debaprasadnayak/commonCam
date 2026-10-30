@@ -8,6 +8,7 @@ public struct EventGroup: Codable, Equatable, Identifiable, Sendable {
     public let state: String
     public let peopleCap: Int
     public let storageCapBytes: Int64
+    public let storageUsedBytes: Int64
     public let startsAt: Date
     public let endsAt: Date
 }
@@ -72,6 +73,32 @@ public struct APIClient: Sendable {
             "qrToken": qrToken, "displayName": displayName, "colour": colour, "consent": consentAccepted,
         ]
         return try await send("POST", "join", body: try JSONSerialization.data(withJSONObject: body))
+    }
+
+    public func gallery(of groupID: String) async throws -> [GalleryItem] {
+        try await send("GET", "groups/\(groupID)/items")
+    }
+
+    /// Asks for an upload URL (the server checks the group is open, we are a member and it fits the cap),
+    /// uploads the original byte-for-byte, then confirms so it appears in the gallery.
+    public func share(_ photo: CapturedPhoto, in groupID: String) async throws -> GalleryItem {
+        let ask: [String: any Sendable] = ["bytes": photo.data.count, "contentType": photo.format.contentType]
+        let ticket: UploadTicket = try await send(
+            "POST", "groups/\(groupID)/uploads", body: try JSONSerialization.data(withJSONObject: ask)
+        )
+        try await upload(photo, to: ticket)
+        let confirm = try JSONSerialization.data(withJSONObject: ["itemId": ticket.itemId])
+        return try await send("POST", "groups/\(groupID)/items", body: confirm)
+    }
+
+    /// The signed URL is the credential, so no device token is sent with the bytes.
+    private func upload(_ photo: CapturedPhoto, to ticket: UploadTicket) async throws {
+        var request = URLRequest(url: ticket.uploadUrl)
+        request.httpMethod = "PUT"
+        request.setValue(photo.format.contentType, forHTTPHeaderField: "Content-Type")
+        let (_, response) = try await session.upload(for: request, from: photo.data)
+        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+        guard (200..<300).contains(status) else { throw APIError(statusCode: status) }
     }
 
     private func send<T: Decodable>(_ method: String, _ path: String, body: Data? = nil) async throws -> T {
