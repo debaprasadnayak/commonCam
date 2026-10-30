@@ -10,6 +10,7 @@ actor FakeServer: UploadService {
     private var uploads: [String: (bytes: Int64, parts: [Int: Data], completed: Bool)] = [:]
     private(set) var stored: [String: Data] = [:]
     private(set) var confirmedRecipes: [String: FilterRecipe?] = [:]
+    private(set) var contentTypes: [String: String] = [:]
 
     init(partSize: Int64) { self.partSize = partSize }
 
@@ -20,6 +21,7 @@ actor FakeServer: UploadService {
         starts += 1
         let itemID = "item-\(starts)"
         uploads[itemID] = (bytes, [:], false)
+        contentTypes[itemID] = contentType
         let partCount = Int((bytes + partSize - 1) / partSize)
         return MultipartUpload(itemId: itemID, partSize: partSize, partCount: partCount)
     }

@@ -84,6 +84,21 @@ public actor UploadQueue {
         return upload
     }
 
+    /// Queues a recorded clip. The file is moved (not copied) into the queue and later sent part by part from disk.
+    @discardableResult
+    public func enqueue(_ video: CapturedVideo, in groupID: String) throws -> QueuedUpload {
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let bytes = try FileManager.default.attributesOfItem(atPath: video.file.path())[.size] as? Int64 ?? 0
+        let upload = QueuedUpload(
+            id: UUID(), groupID: groupID, contentType: CapturedVideo.contentType, bytes: bytes,
+            createdAt: now(), fileExtension: CapturedVideo.fileExtension, filterRecipe: nil
+        )
+        try FileManager.default.moveItem(at: video.file, to: originalFile(of: upload))
+        uploads.append(upload)
+        try save()
+        return upload
+    }
+
     /// Forgets a shot (e.g. one the server refused) and deletes its files.
     public func remove(_ id: UUID) {
         guard let upload = uploads.first(where: { $0.id == id }) else { return }
