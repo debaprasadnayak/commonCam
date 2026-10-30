@@ -14,10 +14,16 @@ struct PhotoKitLibrary: PhotoLibrary {
             PHAssetCreationRequest.forAsset().addResource(with: .photo, data: data, options: nil)
         }
     }
+
+    func addVideo(_ data: Data) async throws {
+        try await PHPhotoLibrary.shared().performChanges {
+            PHAssetCreationRequest.forAsset().addResource(with: .video, data: data, options: nil)
+        }
+    }
 }
 
 extension PhotoSaver {
-    /// Saves the filtered version of photos that have a recipe (the item detail view can save the original).
+    /// Saves the filtered version of photos that have a recipe, unless asked for originals (bulk "Save all").
     static let live = PhotoSaver(library: PhotoKitLibrary()) { url in
         let (data, response) = try await URLSession.shared.data(from: url)
         guard (response as? HTTPURLResponse)?.statusCode == 200 else { throw URLError(.badServerResponse) }

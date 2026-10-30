@@ -10,6 +10,7 @@ actor FakePhotoLibrary: PhotoLibrary {
     var granted: Bool
     var failing: Set<Data>
     private(set) var added: [Data] = []
+    private(set) var addedVideos: [Data] = []
     private(set) var accessRequests = 0
 
     init(granted: Bool = true, failing: Set<Data> = []) {
@@ -26,13 +27,17 @@ actor FakePhotoLibrary: PhotoLibrary {
         if failing.contains(data) { throw URLError(.cannotWriteToFile) }
         added.append(data)
     }
+
+    func addVideo(_ data: Data) async throws {
+        addedVideos.append(data)
+    }
 }
 
 private struct DownloadFailed: Error {}
 
-private func item(_ id: String) -> GalleryItem {
+private func item(_ id: String, type: String = "photo") -> GalleryItem {
     GalleryItem(
-        id: id, type: "photo", contentType: "image/jpeg", bytes: 3, createdAt: Date(timeIntervalSince1970: 0),
+        id: id, type: type, contentType: "image/jpeg", bytes: 3, createdAt: Date(timeIntervalSince1970: 0),
         contributor: Contributor(memberId: nil, displayName: "Host", colour: "#8E8E93"),
         downloadUrl: URL(string: "https://example.test/media/\(id)")!, downloadUrlExpiresAt: Date(timeIntervalSince1970: 900))
 }
@@ -172,6 +177,17 @@ struct FilteredSaveTests {
         let filtered = try firstPixel(of: added[0])
         #expect(filtered.isJPEG && isGrey(filtered.rgb))
         #expect(added[1] == redPNG)
+    }
+
+    @Test func bulkSavesOriginalsIncludingVideos() async throws {
+        let library = FakePhotoLibrary()
+        let saver = PhotoSaver(library: library, download: { _ in redPNG })
+
+        let report = await saver.save([photo("a", recipe: ink), item("v", type: "video")], originals: true)
+
+        #expect(report.saved == ["a", "v"])
+        #expect(await library.added == [redPNG])
+        #expect(await library.addedVideos == [redPNG])
     }
 
     @Test func savesTheOriginalWhenThisBuildCannotRenderTheRecipe() async {
