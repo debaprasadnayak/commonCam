@@ -14,6 +14,8 @@ public struct QueuedUpload: Codable, Equatable, Identifiable, Sendable {
     public let bytes: Int64
     public let createdAt: Date
     let fileExtension: String
+    /// The look chosen at capture; sent with the confirm so the gallery can render it. Absent in queues saved before filters.
+    public let filterRecipe: FilterRecipe?
     /// Set once the server has accepted the upload; parts then go to this item.
     public internal(set) var itemID: String?
     public internal(set) var partCount: Int?
@@ -74,7 +76,7 @@ public actor UploadQueue {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let upload = QueuedUpload(
             id: UUID(), groupID: groupID, contentType: photo.format.contentType, bytes: Int64(photo.data.count),
-            createdAt: now(), fileExtension: photo.format.rawValue
+            createdAt: now(), fileExtension: photo.format.rawValue, filterRecipe: photo.filterRecipe
         )
         try photo.data.write(to: originalFile(of: upload), options: .atomic)
         uploads.append(upload)
@@ -140,7 +142,7 @@ public actor UploadQueue {
             upload = try update(id) { $0.isAssembled = true }
         }
 
-        let item = try await service.confirmUpload(itemID: itemID, in: upload.groupID)
+        let item = try await service.confirmUpload(itemID: itemID, filterRecipe: upload.filterRecipe, in: upload.groupID)
         remove(id)
         return item
     }

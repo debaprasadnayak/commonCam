@@ -377,4 +377,33 @@ private let otter = Member(
                 .upload(file: file, to: URL(string: "https://api.test/media-parts/i1/1")!, taskID: "b#1")
         }
     }
+
+    @Test func confirmsAQueuedPhotoWithItsRecipeSoTheOriginalStaysUntouched() async throws {
+        let recipe = FilterRecipe(id: "golden-hour", version: 1, params: ["intensity": 0.8])
+        StubURLProtocol.responseBody = Data(itemJSON.utf8)
+        StubURLProtocol.statusCode = 201
+
+        _ = try await client.confirmUpload(itemID: "i1", filterRecipe: recipe, in: "g1")
+
+        let request = try #require(StubURLProtocol.requests.first)
+        #expect(request.url?.path == "/groups/g1/items")
+        let confirm = try JSONSerialization.jsonObject(with: try #require(request.httpBody)) as? [String: Any]
+        #expect(confirm?["itemId"] as? String == "i1")
+        let sent = confirm?["filterRecipe"] as? [String: Any]
+        #expect(sent?["id"] as? String == "golden-hour")
+        #expect(sent?["version"] as? Int == 1)
+        #expect((sent?["params"] as? [String: Double]) == ["intensity": 0.8])
+    }
+
+    @Test func listsEachItemsFilterRecipe() async throws {
+        let filtered = itemJSON.replacingOccurrences(
+            of: #""bytes":4,"#, with: #""bytes":4,"filterRecipe":{"id":"ink","version":2,"params":{"contrast":1.2}},"#
+        )
+        let unfiltered = itemJSON.replacingOccurrences(of: #""bytes":4,"#, with: #""bytes":4,"filterRecipe":null,"#)
+        StubURLProtocol.responseBody = Data("[\(filtered),\(unfiltered)]".utf8)
+
+        let items = try await client.gallery(of: "g1")
+
+        #expect(items.map(\.filterRecipe) == [FilterRecipe(id: "ink", version: 2, params: ["contrast": 1.2]), nil])
+    }
 }

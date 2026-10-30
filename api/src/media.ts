@@ -1,3 +1,4 @@
+import { parseFilterRecipe } from "./filterRecipe";
 import { isHostOrCoHost } from "./hostControls";
 import type { Env } from "./index";
 import { VISIBLE_TO_VIEWER } from "./moderation";
@@ -22,6 +23,7 @@ export interface ItemRow {
   object_key: string;
   created_at: string;
   contributor_device_id: string;
+  filter_recipe: string | null;
   display_name: string | null;
   colour: string | null;
   hidden: number;
@@ -123,7 +125,9 @@ export async function createPendingItem(
 async function confirmItem(request: Request, env: Env, groupId: string, deviceId: string) {
   const caller = await findCaller(env, groupId, deviceId);
   if (!caller) return new Response("Not found", { status: 404 });
-  const body = await request.json<{ itemId?: unknown }>().catch(() => ({}) as Record<string, unknown>);
+  const body = await request.json<{ itemId?: unknown; filterRecipe?: unknown }>().catch(() => ({}) as Record<string, unknown>);
+  const recipe = parseFilterRecipe(body.filterRecipe);
+  if (recipe === undefined) return new Response("Invalid filter recipe", { status: 400 });
   const item = typeof body.itemId === "string"
     ? await env.DB.prepare(
         "SELECT id, bytes, object_key, status FROM items WHERE id = ? AND group_id = ? AND contributor_device_id = ?",
@@ -153,7 +157,9 @@ async function confirmItem(request: Request, env: Env, groupId: string, deviceId
     await env.DB.prepare("UPDATE items SET status = 'pending' WHERE id = ?").bind(item.id).run();
     return new Response("This group's storage is full", { status: 413 });
   }
-  await env.DB.prepare("UPDATE items SET status = 'ready' WHERE id = ?").bind(item.id).run();
+  await env.DB.prepare("UPDATE items SET status = 'ready', filter_recipe = ? WHERE id = ?")
+    .bind(recipe && JSON.stringify(recipe), item.id)
+    .run();
   return Response.json(await itemJson(env, await findItem(env, item.id), new URL(request.url).origin, true), { status: 201 });
 }
 
@@ -168,7 +174,7 @@ async function gallery(url: URL, env: Env, groupId: string, deviceId: string) {
   return Response.json(await Promise.all(results.map((row) => itemJson(env, row, url.origin, moderator || row.contributor_device_id === deviceId))));
 }
 
-export const ITEM_SELECT = `SELECT i.id, i.member_id, i.type, i.content_type, i.bytes, i.object_key, i.created_at, i.contributor_device_id, i.hidden, m.display_name, m.colour
+export const ITEM_SELECT = `SELECT i.id, i.member_id, i.type, i.content_type, i.bytes, i.object_key, i.created_at, i.contributor_device_id, i.hidden, i.filter_recipe, m.display_name, m.colour
   FROM items i LEFT JOIN members m ON m.id = i.member_id`;
 
 async function findItem(env: Env, itemId: string): Promise<ItemRow> {
@@ -201,6 +207,7 @@ export async function itemJson(env: Env, row: ItemRow, origin: string, canDelete
     contentType: row.content_type,
     bytes: row.bytes,
     createdAt: row.created_at,
+    filterRecipe: row.filter_recipe ? JSON.parse(row.filter_recipe) : null,
     contributor: row.member_id
       ? { memberId: row.member_id, displayName: row.display_name, colour: row.colour }
       : { memberId: null, ...HOST_CONTRIBUTOR },

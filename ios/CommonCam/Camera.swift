@@ -4,6 +4,7 @@ import SwiftUI
 
 /// AVFoundation photo pipeline: back wide camera, maximum resolution, quality-prioritised HEIC (JPEG fallback).
 /// All session work runs on `queue`; the format choice lives in `PhotoFormat` so it can be unit tested.
+/// Video frames feed the filtered live preview (`FilteredPreview`); the photo itself is always the unfiltered original.
 final class Camera: NSObject, @unchecked Sendable {
     enum Failure: LocalizedError {
         case noCamera, accessDenied, captureFailed
@@ -18,6 +19,12 @@ final class Camera: NSObject, @unchecked Sendable {
 
     let session = AVCaptureSession()
     private let output = AVCapturePhotoOutput()
+    private let frames = AVCaptureVideoDataOutput()
+    private let framesQueue = DispatchQueue(label: "commonCam.camera.frames")
+    private var rotation: AVCaptureDevice.RotationCoordinator?
+    private var rotationObservation: NSKeyValueObservation?
+    /// Latest preview frame, upright. Read by the preview's draw loop.
+    let latestFrame = LatestFrame()
     private let queue = DispatchQueue(label: "commonCam.camera")
     private var format: PhotoFormat = .jpeg
     private var pending: CheckedContinuation<CapturedPhoto, Error>?
@@ -50,6 +57,10 @@ final class Camera: NSObject, @unchecked Sendable {
                 let settings = AVCapturePhotoSettings(format: [AVVideoCodecKey: codec])
                 settings.maxPhotoDimensions = output.maxPhotoDimensions
                 settings.photoQualityPrioritization = .quality
+                if let angle = rotation?.videoRotationAngleForHorizonLevelCapture,
+                   let connection = output.connection(with: .video), connection.isVideoRotationAngleSupported(angle) {
+                    connection.videoRotationAngle = angle
+                }
                 pending = continuation
                 output.capturePhoto(with: settings, delegate: self)
             }
@@ -69,6 +80,20 @@ final class Camera: NSObject, @unchecked Sendable {
         guard session.canAddInput(input), session.canAddOutput(output) else { throw Failure.noCamera }
         session.addInput(input)
         session.addOutput(output)
+        frames.alwaysDiscardsLateVideoFrames = true
+        frames.setSampleBufferDelegate(self, queue: framesQueue)
+        if session.canAddOutput(frames) { session.addOutput(frames) }
+        let rotation = AVCaptureDevice.RotationCoordinator(device: device, previewLayer: nil)
+        rotationObservation = rotation.observe(\.videoRotationAngleForHorizonLevelPreview, options: [.initial, .new]) {
+            [weak self] coordinator, _ in
+            guard let self else { return }
+            let angle = coordinator.videoRotationAngleForHorizonLevelPreview
+            queue.async { [self] in
+                guard let connection = frames.connection(with: .video), connection.isVideoRotationAngleSupported(angle) else { return }
+                connection.videoRotationAngle = angle
+            }
+        }
+        self.rotation = rotation
         if let largest = device.activeFormat.supportedMaxPhotoDimensions.max(by: { $0.width * $0.height < $1.width * $1.height }) {
             output.maxPhotoDimensions = largest
         }
@@ -95,12 +120,20 @@ extension Camera: AVCapturePhotoCaptureDelegate {
     }
 }
 
+extension Camera: AVCaptureVideoDataOutputSampleBufferDelegate {
+    func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
+        guard let pixels = sampleBuffer.imageBuffer else { return }
+        latestFrame.set(CIImage(cvPixelBuffer: pixels))
+    }
+}
+
 /// Full-screen viewfinder with a shutter. Hands each original to `onCapture`; explains when there is no camera
 /// (e.g. the Simulator) instead of failing silently.
 struct CameraScreen: View {
     let onCapture: (CapturedPhoto) -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var camera = Camera()
+    @State private var filter: FilterDefinition?
     @State private var problem: String?
     @State private var isReady = false
     @State private var isCapturing = false
@@ -112,7 +145,7 @@ struct CameraScreen: View {
                 ContentUnavailableView("Camera unavailable", systemImage: "camera.fill", description: Text(problem))
                     .foregroundStyle(.white)
             } else {
-                CameraPreview(session: camera.session).ignoresSafeArea()
+                FilteredPreview(frames: camera.latestFrame, recipe: filter?.recipe()).ignoresSafeArea()
             }
             VStack {
                 HStack {
@@ -121,6 +154,7 @@ struct CameraScreen: View {
                 }
                 Spacer()
                 if problem == nil {
+                    FilterPicker(selection: $filter)
                     Button {
                         Task { await shoot() }
                     } label: {
@@ -148,27 +182,10 @@ struct CameraScreen: View {
         isCapturing = true
         defer { isCapturing = false }
         do {
-            onCapture(try await camera.capture())
+            let original = try await camera.capture()
+            onCapture(CapturedPhoto(data: original.data, format: original.format, filterRecipe: filter?.recipe()))
         } catch {
             problem = error.localizedDescription
         }
-    }
-}
-
-private struct CameraPreview: UIViewRepresentable {
-    let session: AVCaptureSession
-
-    func makeUIView(context: Context) -> PreviewView {
-        let view = PreviewView()
-        view.previewLayer.session = session
-        view.previewLayer.videoGravity = .resizeAspectFill
-        return view
-    }
-
-    func updateUIView(_ uiView: PreviewView, context: Context) {}
-
-    final class PreviewView: UIView {
-        override class var layerClass: AnyClass { AVCaptureVideoPreviewLayer.self }
-        var previewLayer: AVCaptureVideoPreviewLayer { layer as! AVCaptureVideoPreviewLayer }
     }
 }
