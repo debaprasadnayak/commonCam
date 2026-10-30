@@ -25,7 +25,7 @@ public protocol UploadService: Sendable {
     func startUpload(bytes: Int64, contentType: String, in groupID: String) async throws -> MultipartUpload
     func partPlan(itemID: String, in groupID: String) async throws -> PartUploadPlan
     func completeUpload(itemID: String, in groupID: String) async throws
-    func confirmUpload(itemID: String, in groupID: String, sensitive: Bool) async throws -> GalleryItem
+    func confirmUpload(itemID: String, filterRecipe: FilterRecipe?, sensitive: Bool, in groupID: String) async throws -> GalleryItem
 }
 
 extension APIClient: UploadService {
@@ -44,10 +44,18 @@ extension APIClient: UploadService {
         _ = try await sendForData("POST", "groups/\(groupID)/multipart/\(itemID)/complete")
     }
 
+    /// Makes the item visible in the gallery and stores the shot's filter recipe (the first confirm wins).
     /// `sensitive`: the on-device analysis flagged it, so the server hides it pending owner review.
-    public func confirmUpload(itemID: String, in groupID: String, sensitive: Bool = false) async throws -> GalleryItem {
-        var body: [String: Any] = ["itemId": itemID]
-        if sensitive { body["sensitive"] = true }
-        return try await send("POST", "groups/\(groupID)/items", body: try JSONSerialization.data(withJSONObject: body))
+    public func confirmUpload(
+        itemID: String, filterRecipe: FilterRecipe? = nil, sensitive: Bool = false, in groupID: String
+    ) async throws -> GalleryItem {
+        let confirm = Confirm(itemId: itemID, filterRecipe: filterRecipe, sensitive: sensitive ? true : nil)
+        return try await send("POST", "groups/\(groupID)/items", body: try JSONEncoder().encode(confirm))
+    }
+
+    private struct Confirm: Encodable {
+        let itemId: String
+        let filterRecipe: FilterRecipe?
+        let sensitive: Bool?
     }
 }

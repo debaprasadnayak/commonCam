@@ -21,14 +21,16 @@ public enum PhotoFormat: String, Sendable {
     }
 }
 
-/// The encoded original straight off the camera.
+/// The encoded original straight off the camera, plus the filter chosen when it was shot (nil = none).
 public struct CapturedPhoto: Sendable {
     public let data: Data
     public let format: PhotoFormat
+    public let filterRecipe: FilterRecipe?
 
-    public init(data: Data, format: PhotoFormat) {
+    public init(data: Data, format: PhotoFormat, filterRecipe: FilterRecipe? = nil) {
         self.data = data
         self.format = format
+        self.filterRecipe = filterRecipe
     }
 }
 
@@ -53,6 +55,8 @@ public struct GalleryItem: Codable, Equatable, Identifiable, Sendable {
     public var canDelete = false
     /// Set only in the host's and co-hosts' view: reported and awaiting their review. Guests never see such items.
     public var hidden: Bool? = nil
+    /// How to render the filtered version; nil when shot without a filter. The download is always the original.
+    public var filterRecipe: FilterRecipe? = nil
 
     public var isHidden: Bool { hidden == true }
 }

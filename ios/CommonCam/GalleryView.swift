@@ -52,17 +52,21 @@ struct GalleryView: View {
                         }
                 }
                 ForEach(items.contributed(by: shownContributor)) { item in
-                    GalleryTile(item: item, isTopContributor: stats.top.map { $0.memberId == item.contributor.memberId } ?? false)
-                        .contextMenu {
-                            Button("Save to Photos", systemImage: "square.and.arrow.down") {
-                                Task { await save([item]) }
-                            }
-                            .disabled(saveProgress != nil)
-                            if item.canDelete {
-                                Button("Delete", systemImage: "trash", role: .destructive) { pendingDelete = item }
-                            }
-                            ItemModerationMenu(api: api, groupID: group.id, item: item, report: { reporting = $0 }, changed: reload)
+                    NavigationLink {
+                        ItemDetailView(item: item)
+                    } label: {
+                        GalleryTile(item: item, isTopContributor: stats.top.map { $0.memberId == item.contributor.memberId } ?? false)
+                    }
+                    .contextMenu {
+                        Button("Save to Photos", systemImage: "square.and.arrow.down") {
+                            Task { await save([item]) }
                         }
+                        .disabled(saveProgress != nil)
+                        if item.canDelete {
+                            Button("Delete", systemImage: "trash", role: .destructive) { pendingDelete = item }
+                        }
+                        ItemModerationMenu(api: api, groupID: group.id, item: item, report: { reporting = $0 }, changed: reload)
+                    }
                 }
             }
             Link("Takedown requests: \(Contact.takedownEmail)", destination: Contact.takedownMailURL)
@@ -197,12 +201,8 @@ private struct GalleryTile: View {
         Color.secondary.opacity(0.15)
             .aspectRatio(1, contentMode: .fit)
             .overlay {
-                AsyncImage(url: item.downloadUrl) { image in
-                    image.resizable().scaledToFill()
-                } placeholder: {
-                    ProgressView()
-                }
-                .pendingReviewBlur(item.isHidden)
+                FilteredThumbnail(item: item)
+                    .pendingReviewBlur(item.isHidden, canReveal: false)
             }
             .clipped()
             .overlay(alignment: .topTrailing) {

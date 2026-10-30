@@ -94,7 +94,7 @@ extension APIClientTests {
          "downloadUrl":"https://api.test/media/x","downloadUrlExpiresAt":"2026-10-30T08:15:00.000Z","canDelete":true,"hidden":true}
         """.utf8)
 
-        let item = try await client.confirmUpload(itemID: "i1", in: "g1", sensitive: true)
+        let item = try await client.confirmUpload(itemID: "i1", sensitive: true, in: "g1")
 
         #expect(item.isHidden)
         let body = try JSONSerialization.jsonObject(with: try #require(StubURLProtocol.requests.first?.httpBody)) as? [String: Any]

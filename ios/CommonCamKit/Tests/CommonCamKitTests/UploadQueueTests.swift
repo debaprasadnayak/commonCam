@@ -9,6 +9,7 @@ actor FakeServer: UploadService {
     var refuse: APIError?
     private var uploads: [String: (bytes: Int64, parts: [Int: Data], completed: Bool)] = [:]
     private(set) var stored: [String: Data] = [:]
+    private(set) var confirmedRecipes: [String: FilterRecipe?] = [:]
     /// The `sensitive` flag each item was confirmed with.
     private(set) var flagged: [String: Bool] = [:]
     private var confirmRefusal: Error?
@@ -52,9 +53,10 @@ actor FakeServer: UploadService {
         uploads[itemID]!.completed = true
     }
 
-    func confirmUpload(itemID: String, in groupID: String, sensitive: Bool) async throws -> GalleryItem {
+    func confirmUpload(itemID: String, filterRecipe: FilterRecipe?, sensitive: Bool, in groupID: String) async throws -> GalleryItem {
         if let confirmRefusal { throw confirmRefusal }
         let data = try #require(stored[itemID])
+        confirmedRecipes[itemID] = filterRecipe
         flagged[itemID] = sensitive
         return GalleryItem(
             id: itemID, type: "photo", contentType: "image/heic", bytes: Int64(data.count), createdAt: .now,
@@ -186,6 +188,30 @@ struct UploadQueueTests {
 
         await makeQueue(now: { start.addingTimeInterval(25 * 3600) }).run()
         #expect(await makeQueue().uploads.first?.failure == 413)
+    }
+
+    @Test func theFilterChosenAtCaptureSurvivesARelaunchAndIsSentOnConfirm() async throws {
+        let recipe = FilterRecipe(id: "golden-hour", version: 1, params: ["intensity": 0.8])
+        let shot = CapturedPhoto(data: photo(25).data, format: .heic, filterRecipe: recipe)
+        _ = try await makeQueue().enqueue(shot, in: "g1")
+        let saved = try String(decoding: Data(contentsOf: directory.appending(path: "queue.json")), as: UTF8.self)
+        #expect(saved.contains("golden-hour"))
+
+        let relaunched = makeQueue()
+        #expect(await relaunched.uploads.first?.filterRecipe == recipe)
+        _ = await relaunched.run()
+
+        #expect(await server.confirmedRecipes["item-1"] == .some(recipe))
+    }
+
+    @Test func aQueueSavedBeforeFiltersStillLoadsWithoutARecipe() async throws {
+        let legacy = #"[{"id":"7C9E6679-7425-40DE-944B-E07FC1F90AE7","groupID":"g1","contentType":"image/heic","bytes":5,"createdAt":0,"fileExtension":"heic","uploadedParts":[],"isAssembled":false}]"#
+        try Data(legacy.utf8).write(to: directory.appending(path: "queue.json"))
+
+        let upload = try #require(await makeQueue().uploads.first)
+
+        #expect(upload.groupID == "g1")
+        #expect(upload.filterRecipe == nil)
     }
 
     @Test func aRemovedShotIsForgottenWithItsFiles() async throws {
