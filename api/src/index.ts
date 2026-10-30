@@ -5,6 +5,7 @@ import { handleJoin, handlePublic } from "./join";
 import { handlePin } from "./pin";
 import { handleMedia, handleSignedMedia } from "./media";
 import { handleModeration } from "./moderation";
+import { handleMultipart, handleSignedParts } from "./multipart";
 import { TIERS } from "./tiers";
 
 export interface Env {
@@ -33,6 +34,8 @@ export default {
     if (publicResponse) return publicResponse;
     const signedMediaResponse = await handleSignedMedia(request, url, env);
     if (signedMediaResponse) return signedMediaResponse;
+    const signedPartResponse = await handleSignedParts(request, url, env);
+    if (signedPartResponse) return signedPartResponse;
     const deviceToken = request.headers.get("Authorization")?.match(/^Bearer (\S+)$/)?.[1];
     if (!deviceToken) return new Response("Missing device token", { status: 401 });
     const deviceId = await sha256Hex(deviceToken);
@@ -90,6 +93,8 @@ export default {
     if (deleteItemResponse) return deleteItemResponse;
     const moderationResponse = await handleModeration(request, url, env, deviceId);
     if (moderationResponse) return moderationResponse;
+    const multipartResponse = await handleMultipart(request, url, env, deviceId);
+    if (multipartResponse) return multipartResponse;
 
     return new Response("Not found", { status: 404 });
   },

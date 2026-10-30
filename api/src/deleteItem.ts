@@ -23,7 +23,7 @@ export async function handleDeleteItem(request: Request, url: URL, env: Env, dev
 
 /**
  * The one item delete, shared by owner/moderator deletes and report review (moderation.ts); callers check permissions.
- * Idempotent: a missing or already-deleted item is a no-op. Reports on the item go with it (they reference the row).
+ * Idempotent: a missing or already-deleted item is a no-op. Rows referencing the item (reports, multipart bookkeeping) go with it.
  */
 export async function deleteItem(env: Env, groupId: string, itemId: string): Promise<void> {
   const item = await env.DB.prepare("SELECT object_key FROM items WHERE id = ? AND group_id = ? AND status = 'ready'")
@@ -37,9 +37,11 @@ export async function deleteItem(env: Env, groupId: string, itemId: string): Pro
          (SELECT bytes FROM items WHERE id = ?2 AND group_id = ?1 AND status = 'ready'))
        WHERE id = ?1 AND EXISTS (SELECT 1 FROM items WHERE id = ?2 AND group_id = ?1 AND status = 'ready')`,
     ).bind(groupId, itemId),
-    env.DB.prepare(
-      "DELETE FROM reports WHERE item_id = ?2 AND group_id = ?1 AND EXISTS (SELECT 1 FROM items WHERE id = ?2 AND group_id = ?1 AND status = 'ready')",
-    ).bind(groupId, itemId),
+    ...["reports", "multipart_parts", "multipart_uploads"].map((table) =>
+      env.DB.prepare(
+        `DELETE FROM ${table} WHERE item_id = ?2 AND EXISTS (SELECT 1 FROM items WHERE id = ?2 AND group_id = ?1 AND status = 'ready')`,
+      ).bind(groupId, itemId),
+    ),
     env.DB.prepare("DELETE FROM items WHERE id = ? AND group_id = ? AND status = 'ready'").bind(itemId, groupId),
   ]);
   // R2 delete is idempotent; if it fails after the row is gone the object is orphaned, never shown.
