@@ -27,3 +27,9 @@ cd ios && xcodebuild test -project CommonCam.xcodeproj -scheme CommonCam \
 ```
 
 The app talks to `http://localhost:8787` (set by `APIBaseURL` in `ios/CommonCam-Info.plist`), so run `npm run dev` before launching it in the simulator.
+
+## Purchases (paid tiers)
+
+- Products (placeholder prices) are in `ios/CommonCamTests/CommonCam.storekit`, used by the scheme's Run action and by `StoreKitTest` in `TierPurchaserTests`.
+- The API activates a paid group only from an App Store signed transaction that chains to Apple Root CA - G3 (`api/src/appStore.ts`); each transaction id is accepted once. Worker tests use a locally generated stand-in PKI (`api/test/support/fakeAppStore.ts`).
+- Purchases made against the local `.storekit` file are signed by Xcode, not Apple, so `npm run dev` rejects them (403); the purchase stays unfinished in StoreKit. End-to-end activation needs App Store Connect sandbox products.

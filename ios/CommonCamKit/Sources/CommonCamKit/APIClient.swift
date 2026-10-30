@@ -10,10 +10,26 @@ public struct EventGroup: Codable, Equatable, Identifiable, Sendable {
     public let storageCapBytes: Int64
     public let startsAt: Date
     public let endsAt: Date
+
+    public init(
+        id: String, tier: String, state: String, peopleCap: Int, storageCapBytes: Int64, startsAt: Date, endsAt: Date
+    ) {
+        self.id = id
+        self.tier = tier
+        self.state = state
+        self.peopleCap = peopleCap
+        self.storageCapBytes = storageCapBytes
+        self.startsAt = startsAt
+        self.endsAt = endsAt
+    }
 }
 
 public struct APIError: Error, Equatable {
     public let statusCode: Int
+
+    public init(statusCode: Int) {
+        self.statusCode = statusCode
+    }
 }
 
 /// Talks to the commonCam Worker API. Every request carries the device token.
@@ -34,6 +50,12 @@ public struct APIClient: Sendable {
 
     public func myGroups() async throws -> [EventGroup] {
         try await send("GET", "groups")
+    }
+
+    /// Activates a paid group; `signedTransaction` is StoreKit's `VerificationResult.jwsRepresentation`.
+    public func createPaidGroup(tier: PaidTier, signedTransaction: String) async throws -> EventGroup {
+        let body = try JSONEncoder().encode(["tier": tier.rawValue, "signedTransaction": signedTransaction])
+        return try await send("POST", "groups", body: body)
     }
 
     private func send<T: Decodable>(_ method: String, _ path: String, body: Data? = nil) async throws -> T {

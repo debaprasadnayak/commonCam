@@ -1,20 +1,13 @@
-import { TIERS } from "./tiers";
+import { insertTasterGroup, newGroupRow, toJson, type GroupRow } from "./groups";
+import { createPaidGroup } from "./purchases";
+import { isPaidTier } from "./tiers";
 
 export interface Env {
   DB: D1Database;
   MEDIA: R2Bucket;
-}
-
-const DAY_MS = 24 * 60 * 60 * 1000;
-
-interface GroupRow {
-  id: string;
-  tier: string;
-  state: string;
-  people_cap: number;
-  storage_cap_bytes: number;
-  starts_at: string;
-  ends_at: string;
+  /** DER base64 of the root App Store transactions must chain to (Apple Root CA - G3). */
+  APPLE_ROOT_CA_G3: string;
+  APPLE_BUNDLE_ID: string;
 }
 
 export default {
@@ -25,27 +18,14 @@ export default {
     const deviceId = await sha256Hex(deviceToken);
 
     if (url.pathname === "/groups" && request.method === "POST") {
-      const body = await request.json<{ tier?: string }>().catch(() => ({ tier: undefined }));
-      if (body.tier !== "taster") {
-        return new Response("Only the free Taster tier can be created without a purchase", { status: 400 });
-      }
-      const tier = TIERS.taster;
-      const startsAt = new Date();
-      const row: GroupRow = {
-        id: crypto.randomUUID(),
-        tier: "taster",
-        state: "Active",
-        people_cap: tier.peopleCap,
-        storage_cap_bytes: tier.storageCapBytes,
-        starts_at: startsAt.toISOString(),
-        ends_at: new Date(startsAt.getTime() + tier.days * DAY_MS).toISOString(),
-      };
-      await env.DB.prepare(
-        `INSERT INTO groups (id, host_device_id, tier, people_cap, storage_cap_bytes, starts_at, ends_at, state)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      )
-        .bind(row.id, deviceId, row.tier, row.people_cap, row.storage_cap_bytes, row.starts_at, row.ends_at, row.state)
-        .run();
+      const body = await request
+        .json<{ tier?: string; signedTransaction?: unknown }>()
+        .catch(() => ({ tier: undefined, signedTransaction: undefined }));
+      if (isPaidTier(body.tier)) return createPaidGroup(env, deviceId, body.tier, body.signedTransaction);
+      if (body.tier !== "taster") return new Response("Unknown tier", { status: 400 });
+      const row = newGroupRow("taster");
+      const { meta } = await insertTasterGroup(env.DB, deviceId, row).run();
+      if (meta.changes === 0) return new Response("Free Taster limit reached for this device", { status: 403 });
       return Response.json(toJson(row), { status: 201 });
     }
 
@@ -62,18 +42,6 @@ export default {
     return new Response("Not found", { status: 404 });
   },
 } satisfies ExportedHandler<Env>;
-
-function toJson(row: GroupRow) {
-  return {
-    id: row.id,
-    tier: row.tier,
-    state: row.state,
-    peopleCap: row.people_cap,
-    storageCapBytes: row.storage_cap_bytes,
-    startsAt: row.starts_at,
-    endsAt: row.ends_at,
-  };
-}
 
 // The device token is a bearer secret, so only its hash is stored.
 async function sha256Hex(value: string): Promise<string> {
