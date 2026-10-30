@@ -6,24 +6,31 @@ struct GalleryView: View {
     let api: APIClient
     let group: EventGroup
 
+    @Environment(UploadCenter.self) private var uploads
     @State private var items: [GalleryItem] = []
     @State private var isCameraOpen = false
-    @State private var uploading = 0
-    @State private var errorMessage: String?
+
+    private var queued: [QueuedUpload] {
+        uploads.uploads.filter { $0.groupID == group.id }.reversed()
+    }
 
     var body: some View {
         ScrollView {
-            if let errorMessage {
-                Text(errorMessage).foregroundStyle(.red).padding()
+            if let problem = uploads.problem {
+                Text(problem).foregroundStyle(.red).padding()
             }
-            if uploading > 0 {
-                Label("Uploading \(uploading) photo\(uploading == 1 ? "" : "s")…", systemImage: "arrow.up.circle")
-                    .padding(.top)
-            }
-            if items.isEmpty && uploading == 0 {
+            if items.isEmpty && queued.isEmpty {
                 ContentUnavailableView("No photos yet", systemImage: "photo.on.rectangle", description: Text("Tap the camera to add the first one."))
             }
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 110), spacing: 2)], spacing: 2) {
+                ForEach(queued) { upload in
+                    PendingTile(upload: upload, file: uploads.originalFile(of: upload))
+                        .contextMenu {
+                            Button("Remove", systemImage: "trash", role: .destructive) {
+                                Task { await uploads.remove(upload) }
+                            }
+                        }
+                }
                 ForEach(items) { item in
                     GalleryTile(item: item)
                 }
@@ -34,7 +41,7 @@ struct GalleryView: View {
             Button("Take photo", systemImage: "camera") { isCameraOpen = true }
         }
         .fullScreenCover(isPresented: $isCameraOpen) {
-            CameraScreen { photo in Task { await share(photo) } }
+            CameraScreen { photo in Task { await uploads.enqueue(photo, in: group.id) } }
         }
         .task {
             // Re-listing also renews the short-lived download URLs.
@@ -44,29 +51,11 @@ struct GalleryView: View {
             }
         }
         .refreshable { await reload() }
+        .onChange(of: uploads.confirmed.count) { Task { await reload() } }
     }
 
     private func reload() async {
         if let latest = try? await api.gallery(of: group.id) { items = latest }
-    }
-
-    private func share(_ photo: CapturedPhoto) async {
-        uploading += 1
-        defer { uploading -= 1 }
-        do {
-            let item = try await api.share(photo, in: group.id)
-            items.removeAll { $0.id == item.id }
-            items.insert(item, at: 0)
-            errorMessage = nil
-        } catch let error as APIError {
-            errorMessage = switch error.statusCode {
-            case 410: "This group has ended, so the photo wasn't shared."
-            case 413: "The group's storage is full, so the photo wasn't shared."
-            default: "Couldn't share the photo (error \(error.statusCode))."
-            }
-        } catch {
-            errorMessage = "Couldn't share the photo: \(error.localizedDescription)"
-        }
     }
 }
 
@@ -97,5 +86,38 @@ private struct GalleryTile: View {
             }
             .accessibilityElement(children: .combine)
             .accessibilityLabel("Photo by \(item.contributor.displayName)")
+    }
+}
+
+/// A shot still in the upload queue, shown from the local original with a badge until the server confirms it.
+private struct PendingTile: View {
+    let upload: QueuedUpload
+    let file: URL
+    @State private var thumbnail: UIImage?
+
+    var body: some View {
+        Color.secondary.opacity(0.15)
+            .aspectRatio(1, contentMode: .fit)
+            .overlay {
+                if let thumbnail {
+                    Image(uiImage: thumbnail).resizable().scaledToFill().opacity(0.6)
+                }
+            }
+            .task(id: file) {
+                guard let image = UIImage(contentsOfFile: file.path()) else { return }
+                let scale = 300 / max(image.size.width, image.size.height, 1)
+                thumbnail = await image.byPreparingThumbnail(ofSize: CGSize(width: image.size.width * scale, height: image.size.height * scale))
+            }
+            .clipped()
+            .overlay(alignment: .topTrailing) {
+                Label(upload.failureMessage ?? "Pending", systemImage: upload.isPending ? "clock.arrow.circlepath" : "exclamationmark.triangle.fill")
+                    .font(.caption2)
+                    .foregroundStyle(upload.isPending ? Color.primary : Color.red)
+                    .padding(4)
+                    .background(.ultraThinMaterial, in: Capsule())
+                    .padding(4)
+            }
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel(upload.isPending ? "Photo waiting to upload" : "Photo not shared: \(upload.failureMessage ?? "")")
     }
 }

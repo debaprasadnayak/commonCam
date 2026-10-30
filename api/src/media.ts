@@ -69,6 +69,27 @@ export async function handleMedia(request: Request, url: URL, env: Env, deviceId
 }
 
 async function requestUpload(request: Request, url: URL, env: Env, groupId: string, deviceId: string) {
+  const item = await createPendingItem(request, env, groupId, deviceId);
+  if (item instanceof Response) return item;
+  const exp = String(Math.floor(Date.now() / 1000) + UPLOAD_URL_TTL_S);
+  const uploadUrl = await signedUrl(env, url.origin, "PUT", item.objectKey, exp, String(item.bytes), item.contentType);
+  return Response.json({ itemId: item.itemId, uploadUrl, expiresAt: new Date(Number(exp) * 1000).toISOString() }, { status: 201 });
+}
+
+export interface PendingItem {
+  itemId: string;
+  objectKey: string;
+  bytes: number;
+  contentType: string;
+}
+
+/** Validates an upload request body ({bytes, contentType}) for the caller and records a 'pending' item. */
+export async function createPendingItem(
+  request: Request,
+  env: Env,
+  groupId: string,
+  deviceId: string,
+): Promise<PendingItem | Response> {
   const caller = await findCaller(env, groupId, deviceId);
   if (!caller) return new Response("Not found", { status: 404 });
   if (!isOpen(caller.group)) return new Response("This group is no longer open", { status: 410 });
@@ -92,10 +113,7 @@ async function requestUpload(request: Request, url: URL, env: Env, groupId: stri
   )
     .bind(itemId, groupId, caller.memberId, deviceId, CONTENT_TYPES[contentType], contentType, bytes, objectKey, new Date().toISOString())
     .run();
-
-  const exp = String(Math.floor(Date.now() / 1000) + UPLOAD_URL_TTL_S);
-  const uploadUrl = await signedUrl(env, url.origin, "PUT", objectKey, exp, String(bytes), contentType);
-  return Response.json({ itemId, uploadUrl, expiresAt: new Date(Number(exp) * 1000).toISOString() }, { status: 201 });
+  return { itemId, objectKey, bytes, contentType };
 }
 
 async function confirmItem(request: Request, env: Env, groupId: string, deviceId: string) {
@@ -151,7 +169,7 @@ async function findItem(env: Env, itemId: string): Promise<ItemRow> {
 }
 
 /** The group, if the device is its host or an active member. `memberId` is null for the host. */
-async function findCaller(env: Env, groupId: string, deviceId: string): Promise<Caller | null> {
+export async function findCaller(env: Env, groupId: string, deviceId: string): Promise<Caller | null> {
   const row = await env.DB.prepare(
     `SELECT g.id, g.state, g.ends_at, g.storage_cap_bytes, g.storage_used_bytes, g.host_device_id, m.id AS member_id
      FROM groups g LEFT JOIN members m ON m.group_id = g.id AND m.device_id = ?2 AND m.status = 'active'
@@ -163,7 +181,7 @@ async function findCaller(env: Env, groupId: string, deviceId: string): Promise<
   return { group: row, memberId: row.host_device_id === deviceId ? null : row.member_id };
 }
 
-function isOpen(group: Caller["group"]) {
+export function isOpen(group: Caller["group"]) {
   return group.state === "Active" && Date.parse(group.ends_at) > Date.now();
 }
 
@@ -192,13 +210,13 @@ async function signedUrl(env: Env, origin: string, method: string, key: string, 
   return url.toString();
 }
 
-async function verify(env: Env, sig: string, method: string, key: string, exp: string, bytes: string, type: string) {
+export async function verify(env: Env, sig: string, method: string, key: string, exp: string, bytes: string, type: string) {
   const expected = new TextEncoder().encode(await sign(env, method, key, exp, bytes, type));
   const given = new TextEncoder().encode(sig);
   return given.byteLength === expected.byteLength && crypto.subtle.timingSafeEqual(given, expected);
 }
 
-async function sign(env: Env, method: string, key: string, exp: string, bytes: string, type: string) {
+export async function sign(env: Env, method: string, key: string, exp: string, bytes: string, type: string) {
   if (!env.MEDIA_SIGNING_KEY) throw new Error("MEDIA_SIGNING_KEY is not configured");
   const hmacKey = await crypto.subtle.importKey(
     "raw",

@@ -3,6 +3,7 @@ import { handleHostControls } from "./hostControls";
 import { handleJoin, handlePublic } from "./join";
 import { handlePin } from "./pin";
 import { handleMedia, handleSignedMedia } from "./media";
+import { handleMultipart, handleSignedParts } from "./multipart";
 import { TIERS } from "./tiers";
 
 export interface Env {
@@ -31,6 +32,8 @@ export default {
     if (publicResponse) return publicResponse;
     const signedMediaResponse = await handleSignedMedia(request, url, env);
     if (signedMediaResponse) return signedMediaResponse;
+    const signedPartResponse = await handleSignedParts(request, url, env);
+    if (signedPartResponse) return signedPartResponse;
     const deviceToken = request.headers.get("Authorization")?.match(/^Bearer (\S+)$/)?.[1];
     if (!deviceToken) return new Response("Missing device token", { status: 401 });
     const deviceId = await sha256Hex(deviceToken);
@@ -84,6 +87,8 @@ export default {
 
     const mediaResponse = await handleMedia(request, url, env, deviceId);
     if (mediaResponse) return mediaResponse;
+    const multipartResponse = await handleMultipart(request, url, env, deviceId);
+    if (multipartResponse) return multipartResponse;
 
     return new Response("Not found", { status: 404 });
   },
