@@ -21,7 +21,7 @@ export interface MemberRow {
 }
 
 export const MEMBER_COLUMNS = "id, display_name, colour, role, status, consent_accepted_at, joined_at";
-const GROUP_COLUMNS = "id, tier, state, people_cap, storage_cap_bytes, starts_at, ends_at";
+const GROUP_COLUMNS = "id, tier, state, people_cap, storage_cap_bytes, storage_used_bytes, starts_at, ends_at";
 
 /** Routes reachable without a device token: what a phone without the app sees after scanning. */
 export function handlePublic(url: URL): Response | null {

@@ -43,6 +43,9 @@ struct HostGroupView: View {
             if let errorMessage {
                 Section { Text(errorMessage).foregroundStyle(.red) }
             }
+            Section {
+                NavigationLink("Shared gallery") { GalleryView(api: api, group: group) }
+            }
             if isHost || invite != nil {
                 ApprovalSection(api: api, group: group)
             }
