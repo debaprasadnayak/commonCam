@@ -75,13 +75,4 @@ final class GroupPurchaserTests: StoreKitTestCase {
         let unfinished = await unfinishedCount(settlingAt: 1)
         XCTAssertEqual(unfinished, 1)
     }
-
-    private func payload(ofJWS jws: String) throws -> [String: Any] {
-        let parts = jws.split(separator: ".")
-        XCTAssertEqual(parts.count, 3)
-        var payload = parts[1].replacingOccurrences(of: "-", with: "+").replacingOccurrences(of: "_", with: "/")
-        payload += String(repeating: "=", count: (4 - payload.count % 4) % 4)
-        let json = try JSONSerialization.jsonObject(with: try XCTUnwrap(Data(base64Encoded: payload)))
-        return try XCTUnwrap(json as? [String: Any])
-    }
 }

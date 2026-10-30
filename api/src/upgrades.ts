@@ -43,7 +43,7 @@ export async function handleUpgrades(request: Request, url: URL, env: Env, devic
 /**
  * Records the order and raises the group's limits in one D1 transaction, provided the group is still
  * on `expectedTier` (a concurrent upgrade makes this a 400). Replayed transaction ids → 409.
- * Reusable for other paid limit changes (e.g. #18's extension during Grace).
+ * #18's extension (extension.ts) batches recordOrder/raiseLimits itself, after reopening the group.
  */
 export async function applyPurchase(
   db: D1Database,
@@ -67,7 +67,8 @@ export async function applyPurchase(
 }
 
 /**
- * Inserts the order if the group is on `expectedTier`. With `withCredit` (upgrades), `credit_applied`
+ * Inserts the order if the group is Active on `expectedTier` (Grace/Deleted groups take no purchases;
+ * #18's extension reopens the group earlier in the same batch). With `withCredit` (upgrades), `credit_applied`
  * is what was already paid towards the group's tier: the tier purchase plus earlier upgrades, not add-ons.
  */
 export function recordOrder(
@@ -84,7 +85,7 @@ export function recordOrder(
               CASE WHEN ?7 THEN (SELECT COALESCE(SUM(amount_milliunits), 0) FROM orders
                                  WHERE group_id = ?2 AND sku NOT LIKE '${ADD_ON_SKU_PREFIX}%') ELSE 0 END,
               ?8, ?9
-       WHERE EXISTS (SELECT 1 FROM groups WHERE id = ?2 AND tier = ?10)`,
+       WHERE EXISTS (SELECT 1 FROM groups WHERE id = ?2 AND tier = ?10 AND state = 'Active')`,
     )
     .bind(
       crypto.randomUUID(),
@@ -100,7 +101,7 @@ export function recordOrder(
     );
 }
 
-/** Adds `increase` to the group's caps and end date (and sets `newTier`) if it is still on `expectedTier`. */
+/** Adds `increase` to the group's caps and end date (and sets `newTier`) if it is still Active on `expectedTier`. */
 export function raiseLimits(
   db: D1Database,
   groupId: string,
@@ -112,7 +113,7 @@ export function raiseLimits(
     .prepare(
       `UPDATE groups SET tier = ?1, people_cap = people_cap + ?2, storage_cap_bytes = storage_cap_bytes + ?3,
          ends_at = strftime('%Y-%m-%dT%H:%M:%fZ', ends_at, ?4)
-       WHERE id = ?5 AND tier = ?6`,
+       WHERE id = ?5 AND tier = ?6 AND state = 'Active'`,
     )
     .bind(newTier, increase.peopleCap, increase.storageCapBytes, `+${increase.days} days`, groupId, expectedTier);
 }

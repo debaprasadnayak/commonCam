@@ -104,7 +104,7 @@ struct ContentView: View {
     }
 
     private var purchases: PurchaseRouter {
-        PurchaseRouter(handlers: [purchaser.handle, GroupPurchaser(api: api).handle])
+        PurchaseRouter(handlers: [purchaser.handle, GroupPurchaser(api: api).handle, GroupExtender(api: api).handle])
     }
 
     private func loadGroups() async {

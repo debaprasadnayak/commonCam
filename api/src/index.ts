@@ -2,12 +2,14 @@ import { countGroupCreated } from "./analytics";
 import { handleApproval } from "./approval";
 import { handleDeleteItem } from "./deleteItem";
 import { insertTasterGroup, newGroupRow, toJson, type GroupRow } from "./groups";
+import { handleExtension } from "./extension";
 import { handleHostControls } from "./hostControls";
 import { handleJoin, handlePublic } from "./join";
 import { handlePin } from "./pin";
 import { handleMedia, handleSignedMedia } from "./media";
 import { handleModeration } from "./moderation";
 import { handleMultipart, handleSignedParts } from "./multipart";
+import { runLifecycle } from "./lifecycle";
 import { createPaidGroup } from "./purchases";
 import { isPaidTier } from "./tiers";
 import { handleStorageCap } from "./storageCap";
@@ -20,6 +22,8 @@ export interface Env {
   /** DER base64 of the root App Store transactions must chain to (Apple Root CA - G3). */
   APPLE_ROOT_CA_G3: string;
   APPLE_BUNDLE_ID: string;
+  /** Days a group stays read-only after its paid period before server media is deleted (wrangler `vars`). */
+  GRACE_DAYS: string;
 }
 
 export { toJson, type GroupRow } from "./groups";
@@ -51,13 +55,16 @@ export default {
 
     if (url.pathname === "/groups" && request.method === "GET") {
       const { results } = await env.DB.prepare(
-        `SELECT id, tier, state, people_cap, storage_cap_bytes, storage_used_bytes, starts_at, ends_at
+        `SELECT id, tier, state, people_cap, storage_cap_bytes, storage_used_bytes, starts_at, ends_at, grace_ends_at
          FROM groups WHERE host_device_id = ? ORDER BY starts_at DESC`,
       )
         .bind(deviceId)
         .all<GroupRow>();
       return Response.json(results.map(toJson));
     }
+
+    const extensionResponse = await handleExtension(request, url, env, deviceId);
+    if (extensionResponse) return extensionResponse;
 
     const approvalResponse = await handleApproval(request, url, env, deviceId);
     if (approvalResponse) return approvalResponse;
@@ -84,6 +91,10 @@ export default {
     if (storageCapResponse) return storageCapResponse;
 
     return new Response("Not found", { status: 404 });
+  },
+
+  async scheduled(controller: ScheduledController, env: Env): Promise<void> {
+    await runLifecycle(env, controller.scheduledTime);
   },
 } satisfies ExportedHandler<Env>;
 

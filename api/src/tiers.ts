@@ -64,3 +64,11 @@ export const ADD_ONS = {
 export function addOnForProductId(productId: string): LimitIncrease | null {
   return Object.values(ADD_ONS).find((addOn) => addOn.productId === productId) ?? null;
 }
+
+/** Paid extension of an ended group (lifecycle Grace → Active, #18): one consumable, same for every tier. */
+export const EXTENSION = {
+  productId: "app.commoncam.extension",
+  peopleCap: 0,
+  days: 7,
+  storageCapBytes: 0,
+} as const satisfies LimitIncrease & { productId: string };
