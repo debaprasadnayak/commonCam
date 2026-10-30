@@ -82,3 +82,9 @@ jobs:
         env:
           MEDIA_SIGNING_KEY: ${{ secrets.MEDIA_SIGNING_KEY }}
         run: printf '%s' "$MEDIA_SIGNING_KEY" | npx wrangler secret put MEDIA_SIGNING_KEY --name commoncam-api-dev
+      - name: Set APNS_PRIVATE_KEY (skipped until the secret exists)
+        env:
+          APNS_PRIVATE_KEY: ${{ secrets.APNS_PRIVATE_KEY }}
+        run: |
+          if [ -z "$APNS_PRIVATE_KEY" ]; then echo "APNS_PRIVATE_KEY not set; pushes stay off"; exit 0; fi
+          printf '%s' "$APNS_PRIVATE_KEY" | npx wrangler secret put APNS_PRIVATE_KEY --name commoncam-api-dev

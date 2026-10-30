@@ -45,6 +45,7 @@ The `deploy-dev` GitHub Actions job deploys the API to `commoncam-api-dev` on pu
 - `CLOUDFLARE_API_TOKEN`: a token with Workers Scripts:Edit and D1:Edit on this account (the job applies D1 migrations before deploying).
 - `CLOUDFLARE_ACCOUNT_ID`: the Cloudflare account ID.
 - `MEDIA_SIGNING_KEY`: a private signing key for media URLs; use a strong random value and do not commit it.
+- `APNS_PRIVATE_KEY` (optional until an Apple team exists): the APNs `.p8` key; see Push notifications below.
 
 The dev Worker uses the `commoncam` D1 database and private `commoncam-media` R2 bucket. The `commoncam-events` Queue is provisioned but is not yet bound to the Worker. The hourly cron trigger for the lifecycle job (below) is declared in `api/wrangler.jsonc` and deployed with the Worker.
 
@@ -53,7 +54,7 @@ The dev Worker uses the `commoncam` D1 database and private `commoncam-media` R2
 `api/src/lifecycle.ts` runs hourly (cron `0 * * * *` in `api/wrangler.jsonc`, `scheduled` handler in `api/src/index.ts`):
 
 1. **Active → Grace** when `ends_at` passes. `grace_ends_at = ends_at + GRACE_DAYS` (one value in `vars` in `api/wrangler.jsonc`, default `14`). Grace groups are read-only: every upload endpoint answers 410, galleries and downloads keep working.
-2. **Grace → Deleted** when `grace_ends_at` passes: unfinished multipart uploads are aborted, every R2 object under `groups/<groupId>/` is deleted, the prefix is listed again to check it is empty, then the group's items, multipart rows, reports, blocks and members are deleted and the group row is kept as a `Deleted` tombstone (orders still reference it; the anonymous `daily_stats` counts are untouched). Each deletion writes a row to the `deletions` table (`objects_deleted`, `objects_remaining` = 0, `items_deleted`, `deleted_at`) as the audit record. If objects remain, the group stays in Grace and the next run retries.
+2. **Grace → Deleted** when `grace_ends_at` passes: unfinished multipart uploads are aborted, every R2 object under `groups/<groupId>/` is deleted, the prefix is listed again to check it is empty, then the group's items, multipart rows, reports, blocks, sent-notification records and members are deleted and the group row is kept as a `Deleted` tombstone (orders still reference it; the anonymous `daily_stats` counts are untouched). Each deletion writes a row to the `deletions` table (`objects_deleted`, `objects_remaining` = 0, `items_deleted`, `deleted_at`) as the audit record. If objects remain, the group stays in Grace and the next run retries.
 3. **Grace → Active** when the host buys the `app.commoncam.extension` consumable for the group (StoreKit `appAccountToken` = group id): `POST /groups/:id/extend {"signedTransaction"}`, verified and recorded in `orders` like upgrades/add-ons (each transaction once). The group reopens for 7 days from now (`EXTENSION` in `api/src/tiers.ts`).
 
 ### R2 lifecycle rule (backstop, configure manually)
@@ -67,6 +68,23 @@ npx wrangler r2 bucket lifecycle add commoncam-media abort-stale-multipart group
 
 - 90 days comfortably exceeds the longest normal life of an upload (Festival 10 days + grace, now 14 days, at most 30). Media in a group the host keeps extending for more than 90 days after upload would be removed by this rule; raise it if extensions should last longer.
 - The repository does not configure these rules; CI only deploys the Worker.
+
+## Push notifications (APNs)
+
+The Worker sends (`api/src/push.ts`, sender in `api/src/apns.ts`):
+
+- **Grace reminders** to the host and active members, from the hourly lifecycle job: when the group expires (enters Grace), 7 days and 1 day before its media is deleted. Each fires once per grace period (`notifications_sent`, keyed by group, kind and `grace_ends_at`; a paid extension starts a new one). If runs were missed, only the most urgent due reminder goes out.
+- **Storage warnings** to the host and co-hosts when storage crosses into 80% (`nearlyFull`) or 100% (`full`), once per level; the level is re-armed when an upgrade, add-on or deletion brings usage back below it.
+
+The app asks for notification permission at launch and sends its APNs device token to `PUT /devices/push-token {"token":"<hex>"}` (stored per device identity in `push_tokens`). Devices without permission have no token and are skipped; tokens APNs reports as dead are forgotten.
+
+APNs uses token auth (ES256 JWT signed with a `.p8` key). Until it is configured the Worker logs `push: APNs not configured` and sends nothing. To turn it on (needs an Apple Developer team):
+
+1. Create an APNs key in the Apple Developer portal (Keys → Apple Push Notifications service) and enable Push Notifications on the `app.commoncam.CommonCam` App ID.
+2. Add to `vars` in `api/wrangler.jsonc`: `"APNS_KEY_ID": "<key id>"`, `"APNS_TEAM_ID": "<team id>"`, and `"APNS_ENV": "production"` for App Store/TestFlight builds (any other value, or none, uses the sandbox for development builds).
+3. Add the `.p8` file's contents as the repository Actions secret `APNS_PRIVATE_KEY`; the `deploy-dev` job then runs `wrangler secret put APNS_PRIVATE_KEY` (the step is skipped while the secret is absent). Manually: `npx wrangler secret put APNS_PRIVATE_KEY --name commoncam-api-dev < AuthKey_XXXX.p8`.
+
+The app's `ios/CommonCam.entitlements` has `aps-environment` = `development`; distribution signing switches it to production.
 
 ## Analytics
 

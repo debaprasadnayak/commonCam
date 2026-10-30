@@ -3,6 +3,7 @@ import { parseFilterRecipe } from "./filterRecipe";
 import { isHostOrCoHost } from "./hostControls";
 import type { Env } from "./index";
 import { VISIBLE_TO_VIEWER } from "./moderation";
+import { syncStorageWarnings } from "./push";
 import { flagIfSensitive } from "./sensitiveContent";
 
 const UPLOAD_URL_TTL_S = 15 * 60;
@@ -177,6 +178,7 @@ async function confirmItem(request: Request, env: Env, groupId: string, deviceId
     ...flagIfSensitive(env, body.sensitive, groupId, item.id, deviceId),
     countUpload(env.DB, groupId, item.bytes),
   ]);
+  await syncStorageWarnings(env, groupId);
   return Response.json(await itemJson(env, await findItem(env, item.id), new URL(request.url).origin, true), { status: 201 });
 }
 
