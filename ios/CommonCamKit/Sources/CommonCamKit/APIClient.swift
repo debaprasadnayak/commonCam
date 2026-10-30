@@ -12,6 +12,28 @@ public struct EventGroup: Codable, Equatable, Identifiable, Sendable {
     public let endsAt: Date
 }
 
+/// What the host shows as a QR code. `joinUrl` is a universal link that falls back to the App Store.
+public struct Invite: Codable, Equatable, Sendable {
+    public let qrToken: String
+    public let joinUrl: URL
+}
+
+/// A guest in a group, with the fun name and colour they picked.
+public struct Member: Codable, Equatable, Identifiable, Sendable {
+    public let id: String
+    public let displayName: String
+    public let colour: String
+    public let role: String
+    public let consentAcceptedAt: Date
+    public let joinedAt: Date
+}
+
+/// The result of joining: the group and this device's membership in it.
+public struct Membership: Codable, Equatable, Sendable {
+    public let group: EventGroup
+    public let member: Member
+}
+
 public struct APIError: Error, Equatable {
     public let statusCode: Int
 }
@@ -34,6 +56,22 @@ public struct APIClient: Sendable {
 
     public func myGroups() async throws -> [EventGroup] {
         try await send("GET", "groups")
+    }
+
+    public func invite(for groupID: String) async throws -> Invite {
+        try await send("GET", "groups/\(groupID)/invite")
+    }
+
+    public func members(of groupID: String) async throws -> [Member] {
+        try await send("GET", "groups/\(groupID)/members")
+    }
+
+    /// Joins the group behind a scanned QR. The server refuses unless `consentAccepted` is true.
+    public func join(qrToken: String, displayName: String, colour: String, consentAccepted: Bool) async throws -> Membership {
+        let body: [String: any Sendable] = [
+            "qrToken": qrToken, "displayName": displayName, "colour": colour, "consent": consentAccepted,
+        ]
+        return try await send("POST", "join", body: try JSONSerialization.data(withJSONObject: body))
     }
 
     private func send<T: Decodable>(_ method: String, _ path: String, body: Data? = nil) async throws -> T {
