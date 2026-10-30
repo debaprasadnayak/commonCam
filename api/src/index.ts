@@ -1,3 +1,4 @@
+import { handleJoin, handlePublic } from "./join";
 import { TIERS } from "./tiers";
 
 export interface Env {
@@ -7,7 +8,7 @@ export interface Env {
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-interface GroupRow {
+export interface GroupRow {
   id: string;
   tier: string;
   state: string;
@@ -20,6 +21,8 @@ interface GroupRow {
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
+    const publicResponse = handlePublic(url);
+    if (publicResponse) return publicResponse;
     const deviceToken = request.headers.get("Authorization")?.match(/^Bearer (\S+)$/)?.[1];
     if (!deviceToken) return new Response("Missing device token", { status: 401 });
     const deviceId = await sha256Hex(deviceToken);
@@ -59,11 +62,14 @@ export default {
       return Response.json(results.map(toJson));
     }
 
+    const joinResponse = await handleJoin(request, url, env, deviceId);
+    if (joinResponse) return joinResponse;
+
     return new Response("Not found", { status: 404 });
   },
 } satisfies ExportedHandler<Env>;
 
-function toJson(row: GroupRow) {
+export function toJson(row: GroupRow) {
   return {
     id: row.id,
     tier: row.tier,

@@ -44,6 +44,16 @@ private let tasterGroup = EventGroup(
     startsAt: Date(timeIntervalSince1970: 1_793_347_200), endsAt: Date(timeIntervalSince1970: 1_793_433_600)
 )
 
+private let memberJSON = """
+{"id":"m1","displayName":"Dancing Otter","colour":"#FF8800","role":"guest",
+ "consentAcceptedAt":"2026-10-30T08:00:00.000Z","joinedAt":"2026-10-30T08:00:00.000Z"}
+"""
+
+private let otter = Member(
+    id: "m1", displayName: "Dancing Otter", colour: "#FF8800", role: "guest",
+    consentAcceptedAt: Date(timeIntervalSince1970: 1_793_347_200), joinedAt: Date(timeIntervalSince1970: 1_793_347_200)
+)
+
 @Suite(.serialized) struct APIClientTests {
     let client: APIClient
 
@@ -84,6 +94,55 @@ private let tasterGroup = EventGroup(
         let request = try #require(StubURLProtocol.requests.first)
         #expect(request.httpMethod == "GET")
         #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer device-token")
+    }
+
+    @Test func fetchesTheHostsInvite() async throws {
+        StubURLProtocol.responseBody = Data(#"{"qrToken":"tok","joinUrl":"https://api.test/join/tok"}"#.utf8)
+
+        let invite = try await client.invite(for: "g1")
+
+        #expect(invite == Invite(qrToken: "tok", joinUrl: URL(string: "https://api.test/join/tok")!))
+        let request = try #require(StubURLProtocol.requests.first)
+        #expect(request.httpMethod == "GET")
+        #expect(request.url?.absoluteString == "https://api.test/groups/g1/invite")
+    }
+
+    @Test func joinsWithNameColourAndConsent() async throws {
+        StubURLProtocol.statusCode = 201
+        StubURLProtocol.responseBody = Data("""
+        {"group":\(groupJSON),"member":\(memberJSON)}
+        """.utf8)
+
+        let membership = try await client.join(qrToken: "tok", displayName: "Dancing Otter", colour: "#FF8800", consentAccepted: true)
+
+        #expect(membership == Membership(group: tasterGroup, member: otter))
+        let request = try #require(StubURLProtocol.requests.first)
+        #expect(request.httpMethod == "POST")
+        #expect(request.url?.absoluteString == "https://api.test/join")
+        #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer device-token")
+        let body = try JSONSerialization.jsonObject(with: try #require(request.httpBody)) as? [String: Any]
+        #expect(body?["qrToken"] as? String == "tok")
+        #expect(body?["displayName"] as? String == "Dancing Otter")
+        #expect(body?["colour"] as? String == "#FF8800")
+        #expect(body?["consent"] as? Bool == true)
+    }
+
+    @Test func listsAGroupsMembers() async throws {
+        StubURLProtocol.responseBody = Data("[\(memberJSON)]".utf8)
+
+        let members = try await client.members(of: "g1")
+
+        #expect(members == [otter])
+        #expect(StubURLProtocol.requests.first?.url?.absoluteString == "https://api.test/groups/g1/members")
+    }
+
+    @Test func surfacesAFullGroupAsItsStatusCode() async throws {
+        StubURLProtocol.statusCode = 409
+        StubURLProtocol.responseBody = Data()
+
+        await #expect(throws: APIError(statusCode: 409)) {
+            try await client.join(qrToken: "tok", displayName: "X", colour: "#000000", consentAccepted: true)
+        }
     }
 
     @Test func failsOnAnErrorStatus() async throws {
