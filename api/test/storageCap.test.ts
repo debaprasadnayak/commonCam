@@ -21,8 +21,11 @@ async function groupWithGuest(prefix: string) {
   return { group, host, guest };
 }
 
+/** Sets usage and cap directly, as a purchase or deletion would (which also clears the refused-upload flag). */
 async function setUsage(groupId: string, usedBytes: number, capBytes: number) {
-  await env.DB.prepare("UPDATE groups SET storage_used_bytes = ?, storage_cap_bytes = ? WHERE id = ?").bind(usedBytes, capBytes, groupId).run();
+  await env.DB.prepare("UPDATE groups SET storage_used_bytes = ?, storage_cap_bytes = ?, storage_full = 0 WHERE id = ?")
+    .bind(usedBytes, capBytes, groupId)
+    .run();
 }
 
 function requestUpload(token: string, groupId: string, path: "uploads" | "multipart", bytes = 1) {

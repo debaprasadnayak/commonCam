@@ -5,6 +5,7 @@ import type { Env } from "./index";
 import { VISIBLE_TO_VIEWER } from "./moderation";
 import { syncStorageWarnings } from "./push";
 import { flagIfSensitive } from "./sensitiveContent";
+import { refuseForStorage } from "./storageCap";
 
 const UPLOAD_URL_TTL_S = 15 * 60;
 const DOWNLOAD_URL_TTL_S = 15 * 60;
@@ -14,7 +15,7 @@ const CONTENT_TYPES: Record<string, "photo" | "video"> = { "image/heic": "photo"
 const HOST_CONTRIBUTOR = { displayName: "Host", colour: "#8E8E93" };
 
 interface Caller {
-  group: { id: string; state: string; ends_at: string; storage_cap_bytes: number; storage_used_bytes: number };
+  group: { id: string; state: string; ends_at: string; storage_cap_bytes: number; storage_used_bytes: number; storage_full: number };
   memberId: string | null;
 }
 
@@ -122,9 +123,7 @@ export async function createPendingItem(
   }
   if (!CONTENT_TYPES[contentType]) return new Response("Unsupported content type", { status: 400 });
   if (CONTENT_TYPES[contentType] === "video" && !allowVideo) return new Response("Video must use the multipart upload", { status: 400 });
-  if (caller.group.storage_used_bytes + bytes > caller.group.storage_cap_bytes) {
-    return new Response("This group's storage is full", { status: 413 });
-  }
+  if (caller.group.storage_used_bytes + bytes > caller.group.storage_cap_bytes) return refuseForStorage(env, groupId);
 
   const itemId = crypto.randomUUID();
   const objectKey = `groups/${groupId}/${itemId}`;
@@ -177,7 +176,7 @@ async function confirmItem(request: Request, env: Env, groupId: string, deviceId
   if (claim.meta.changes === 0) {
     const status = await env.DB.prepare("SELECT status FROM items WHERE id = ?").bind(item.id).first<string>("status");
     if (status !== "pending") return new Response("Already being confirmed", { status: 409 });
-    return new Response("This group's storage is full", { status: 413 });
+    return refuseForStorage(env, groupId);
   }
   await syncStorageWarnings(env, groupId);
   return Response.json(await itemJson(env, await findItem(env, item.id), new URL(request.url).origin, true), { status: 201 });
@@ -204,7 +203,7 @@ async function findItem(env: Env, itemId: string): Promise<ItemRow> {
 /** The group, if the device is its host or an active member. `memberId` is null for the host. */
 export async function findCaller(env: Env, groupId: string, deviceId: string): Promise<Caller | null> {
   const row = await env.DB.prepare(
-    `SELECT g.id, g.state, g.ends_at, g.storage_cap_bytes, g.storage_used_bytes, g.host_device_id, m.id AS member_id
+    `SELECT g.id, g.state, g.ends_at, g.storage_cap_bytes, g.storage_used_bytes, g.storage_full, g.host_device_id, m.id AS member_id
      FROM groups g LEFT JOIN members m ON m.group_id = g.id AND m.device_id = ?2 AND m.status = 'active'
      WHERE g.id = ?1`,
   )

@@ -77,7 +77,7 @@ export function raiseLimits(
   return db
     .prepare(
       `UPDATE groups SET tier = ?1, people_cap = people_cap + ?2, storage_cap_bytes = storage_cap_bytes + ?3,
-         ends_at = strftime('%Y-%m-%dT%H:%M:%fZ', ends_at, ?4)
+         storage_full = CASE WHEN ?3 > 0 THEN 0 ELSE storage_full END, ends_at = strftime('%Y-%m-%dT%H:%M:%fZ', ends_at, ?4)
        WHERE id = ?5 AND tier = ?6 AND state = 'Active'`,
     )
     .bind(newTier, increase.peopleCap, increase.storageCapBytes, `+${increase.days} days`, groupId, expectedTier);

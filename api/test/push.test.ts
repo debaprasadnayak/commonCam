@@ -262,6 +262,33 @@ describe("storage warnings (SPEC.md section 8)", () => {
     expect(sentTo(token)).toEqual(["storageNearlyFull", "storageNearlyFull"]);
   });
 
+  it("treats the group as full once an upload is refused for lack of room, until more storage is bought", async () => {
+    const token = "17".repeat(32);
+    const group = await newPartyGroup("dev-refused");
+    await registerPush("dev-refused", token);
+    await fillTo(group.id, 25 * GB - 5);
+    const storage = async () => (await (await api(`/groups/${group.id}/storage`, { token: "dev-refused" })).json<any>()).storageLevel;
+    const requestUpload = () =>
+      api(`/groups/${group.id}/uploads`, { method: "POST", token: "dev-refused", body: JSON.stringify({ bytes: 10, contentType: "image/heic" }) });
+    expect(await storage()).toBe("nearlyFull");
+
+    expect((await requestUpload()).status).toBe(413);
+    expect(await storage()).toBe("full");
+    expect(sentTo(token)).toEqual(["storageFull"]);
+    expect((await requestUpload()).status).toBe(413);
+    expect(sentTo(token)).toEqual(["storageFull"]);
+
+    const addOn = await api(`/groups/${group.id}/purchases`, {
+      method: "POST",
+      token: "dev-refused",
+      body: JSON.stringify({ signedTransaction: await signed("app.commoncam.addon.storage", group.id) }),
+    });
+    expect((await addOn.json<any>()).storageLevel).toBe("ok");
+    await fillTo(group.id, 35 * GB - 5);
+    expect((await requestUpload()).status).toBe(413);
+    expect(sentTo(token)).toEqual(["storageFull", "storageFull"]);
+  });
+
   it("skips quietly while APNs isn't configured", async () => {
     const group = await newPartyGroup("dev-noapns");
     await registerPush("dev-noapns", "16".repeat(32));

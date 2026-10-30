@@ -10,6 +10,7 @@ export interface GroupRow {
   people_cap: number;
   storage_cap_bytes: number;
   storage_used_bytes: number;
+  storage_full?: number;
   starts_at: string;
   ends_at: string;
   /** Set when the group enters Grace (lifecycle.ts); null while Active. */
@@ -62,7 +63,7 @@ function values(hostDeviceId: string, row: GroupRow) {
 
 /** Selects what `toJson` needs; every endpoint returning groups reads them with this, so their JSON matches. */
 export const GROUP_SELECT =
-  "SELECT id, tier, state, people_cap, storage_cap_bytes, storage_used_bytes, starts_at, ends_at, grace_ends_at FROM groups";
+  "SELECT id, tier, state, people_cap, storage_cap_bytes, storage_used_bytes, storage_full, starts_at, ends_at, grace_ends_at FROM groups";
 
 export function loadGroup(db: D1Database, groupId: string) {
   return db.prepare(`${GROUP_SELECT} WHERE id = ?`).bind(groupId).first<GroupRow>();
