@@ -1,3 +1,4 @@
+import { isHostOrCoHost } from "./hostControls";
 import type { Env } from "./index";
 
 // No 0/O, 1/I/L: easy to read aloud and type. 31^6 ≈ 887M combinations, guarded by the join rate limit.
@@ -11,15 +12,13 @@ export function normalizePin(value: unknown): string | null {
   return pin.length === PIN_LENGTH ? pin : null;
 }
 
-/** Host-only: `GET` shows the PIN (null when off), `POST` turns it on or rotates it, `DELETE` turns it off. */
+/** Host or co-host: `GET` shows the PIN (null when off), `POST` turns it on or rotates it, `DELETE` turns it off. */
 export async function handlePin(request: Request, url: URL, env: Env, deviceId: string): Promise<Response | null> {
   const route = url.pathname.match(/^\/groups\/([^/]+)\/pin$/);
   if (!route) return null;
   const groupId = route[1];
-  const group = await env.DB.prepare("SELECT pin FROM groups WHERE id = ? AND host_device_id = ?")
-    .bind(groupId, deviceId)
-    .first<{ pin: string | null }>();
-  if (!group) return new Response("Not found", { status: 404 });
+  if (!(await isHostOrCoHost(env, groupId, deviceId))) return new Response("Not found", { status: 404 });
+  const group = (await env.DB.prepare("SELECT pin FROM groups WHERE id = ?").bind(groupId).first<{ pin: string | null }>())!;
 
   if (request.method === "GET") return Response.json({ pin: group.pin });
   if (request.method === "POST") return Response.json({ pin: await setNewPin(env, groupId) });
