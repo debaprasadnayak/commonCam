@@ -27,10 +27,10 @@ struct ContentView: View {
                     Section("Joined") {
                         ForEach(joined, id: \.group.id) { membership in
                             NavigationLink {
-                                List { MembersSection(api: api, group: membership.group) }
-                                    .navigationTitle(membership.member.displayName)
+                                GuestGroupView(api: api, membership: membership)
                             } label: {
-                                Text("\(membership.group.tier.capitalized) group as \(membership.member.displayName)")
+                                Text("\(membership.group.tier.capitalized) group as \(membership.member.displayName)"
+                                    + (membership.isPending ? " (awaiting approval)" : ""))
                             }
                         }
                     }

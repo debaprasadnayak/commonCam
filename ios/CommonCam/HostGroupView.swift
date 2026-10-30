@@ -28,6 +28,7 @@ struct HostGroupView: View {
             if let errorMessage {
                 Section { Text(errorMessage).foregroundStyle(.red) }
             }
+            ApprovalSection(api: api, group: group)
             MembersSection(api: api, group: group)
         }
         .navigationTitle(group.tier.capitalized)

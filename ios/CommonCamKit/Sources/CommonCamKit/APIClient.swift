@@ -24,6 +24,8 @@ public struct Member: Codable, Equatable, Identifiable, Sendable {
     public let displayName: String
     public let colour: String
     public let role: String
+    /// "active", or "pending" while the host has approve-new-members on and hasn't decided yet.
+    public let status: String
     public let consentAcceptedAt: Date
     public let joinedAt: Date
 }
@@ -32,6 +34,13 @@ public struct Member: Codable, Equatable, Identifiable, Sendable {
 public struct Membership: Codable, Equatable, Sendable {
     public let group: EventGroup
     public let member: Member
+
+    /// Waiting for the host or a co-host to approve; the group's members and photos stay hidden until then.
+    public var isPending: Bool { member.status == "pending" }
+}
+
+private struct ApprovalToggle: Codable {
+    let approvalRequired: Bool
 }
 
 public struct APIError: Error, Equatable {
@@ -74,7 +83,37 @@ public struct APIClient: Sendable {
         return try await send("POST", "join", body: try JSONSerialization.data(withJSONObject: body))
     }
 
+    public func approvalRequired(for groupID: String) async throws -> Bool {
+        let toggle: ApprovalToggle = try await send("GET", "groups/\(groupID)/approval")
+        return toggle.approvalRequired
+    }
+
+    /// Host or co-host: when on, new joins wait in `pendingMembers` until approved or rejected.
+    @discardableResult
+    public func setApprovalRequired(_ required: Bool, for groupID: String) async throws -> Bool {
+        let body = try JSONEncoder().encode(ApprovalToggle(approvalRequired: required))
+        let toggle: ApprovalToggle = try await send("PUT", "groups/\(groupID)/approval", body: body)
+        return toggle.approvalRequired
+    }
+
+    public func pendingMembers(of groupID: String) async throws -> [Member] {
+        try await send("GET", "groups/\(groupID)/pending")
+    }
+
+    @discardableResult
+    public func approve(memberID: String, in groupID: String) async throws -> Member {
+        try await send("POST", "groups/\(groupID)/members/\(memberID)/approve")
+    }
+
+    public func reject(memberID: String, in groupID: String) async throws {
+        _ = try await sendForData("POST", "groups/\(groupID)/members/\(memberID)/reject")
+    }
+
     private func send<T: Decodable>(_ method: String, _ path: String, body: Data? = nil) async throws -> T {
+        try Self.decoder.decode(T.self, from: try await sendForData(method, path, body: body))
+    }
+
+    private func sendForData(_ method: String, _ path: String, body: Data? = nil) async throws -> Data {
         var request = URLRequest(url: baseURL.appending(path: path))
         request.httpMethod = method
         request.setValue("Bearer \(try identity.token())", forHTTPHeaderField: "Authorization")
@@ -85,7 +124,7 @@ public struct APIClient: Sendable {
         let (data, response) = try await session.data(for: request)
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
         guard (200..<300).contains(status) else { throw APIError(statusCode: status) }
-        return try Self.decoder.decode(T.self, from: data)
+        return data
     }
 
     private static let decoder: JSONDecoder = {

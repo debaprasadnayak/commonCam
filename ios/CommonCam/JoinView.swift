@@ -58,6 +58,7 @@ struct JoinView: View {
             onJoined(try await api.join(qrToken: qrToken, displayName: displayName, colour: colour, consentAccepted: true))
         } catch let error as APIError {
             errorMessage = switch error.statusCode {
+            case 403: "The host declined your request to join."
             case 404: "That QR code isn't a commonCam group."
             case 409: "This group is full."
             case 410: "This group has ended."

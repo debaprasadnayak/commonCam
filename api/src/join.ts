@@ -1,3 +1,4 @@
+import { newMemberStatus } from "./approval";
 import { type Env, type GroupRow, toJson } from "./index";
 
 // Placeholders until the app is in App Store Connect and has an Apple team (see notes).
@@ -7,16 +8,17 @@ const APPLE_APP_ID = "TEAMID0000.app.commoncam.CommonCam";
 const MAX_FAILURES = 10;
 const FAILURE_WINDOW_MS = 10 * 60 * 1000;
 
-interface MemberRow {
+export interface MemberRow {
   id: string;
   display_name: string;
   colour: string;
   role: string;
+  status: string;
   consent_accepted_at: string;
   joined_at: string;
 }
 
-const MEMBER_COLUMNS = "id, display_name, colour, role, consent_accepted_at, joined_at";
+export const MEMBER_COLUMNS = "id, display_name, colour, role, status, consent_accepted_at, joined_at";
 const GROUP_COLUMNS = "id, tier, state, people_cap, storage_cap_bytes, starts_at, ends_at";
 
 /** Routes reachable without a device token: what a phone without the app sees after scanning. */
@@ -102,7 +104,7 @@ async function join(request: Request, env: Env, deviceId: string): Promise<Respo
   const existing = await env.DB.prepare(`SELECT ${MEMBER_COLUMNS} FROM members WHERE group_id = ? AND device_id = ?`)
     .bind(group.id, deviceId)
     .first<MemberRow>();
-  if (existing) return Response.json({ group: toJson(group), member: memberJson(existing) });
+  if (existing) return joinResponse(group, existing, 200);
 
   const displayName = typeof body.displayName === "string" ? body.displayName.trim() : "";
   if (body.consent !== true) return new Response("Consent is required to join", { status: 400 });
@@ -117,20 +119,27 @@ async function join(request: Request, env: Env, deviceId: string): Promise<Respo
     display_name: displayName,
     colour: body.colour.toUpperCase(),
     role: "guest",
+    status: await newMemberStatus(env, group.id),
     consent_accepted_at: now,
     joined_at: now,
   };
   // Conditional insert so concurrent joins cannot overshoot the cap. The host takes one seat.
   const { meta } = await env.DB.prepare(
     `INSERT INTO members (id, group_id, device_id, display_name, colour, role, status, consent_accepted_at, joined_at)
-     SELECT ?1, ?2, ?3, ?4, ?5, ?6, 'active', ?7, ?8
+     SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?10, ?7, ?8
      WHERE (SELECT COUNT(*) FROM members WHERE group_id = ?2 AND status = 'active') + 1 < ?9`,
   )
-    .bind(member.id, group.id, deviceId, member.display_name, member.colour, member.role, now, now, group.people_cap)
+    .bind(member.id, group.id, deviceId, member.display_name, member.colour, member.role, now, now, group.people_cap, member.status)
     .run();
   if (meta.changes === 0) return new Response("This group is full", { status: 409 });
 
-  return Response.json({ group: toJson(group), member: memberJson(member) }, { status: 201 });
+  return joinResponse(group, member, 201);
+}
+
+// Pending guests get 202 until a host or co-host approves; rejected guests cannot ask again.
+function joinResponse(group: GroupRow, member: MemberRow, okStatus: number): Response {
+  if (member.status === "rejected") return new Response("The host declined your request", { status: 403 });
+  return Response.json({ group: toJson(group), member: memberJson(member) }, { status: member.status === "pending" ? 202 : okStatus });
 }
 
 async function isRateLimited(env: Env, keys: string[]): Promise<boolean> {
@@ -150,12 +159,13 @@ async function recordFailure(env: Env, keys: string[]): Promise<void> {
   await env.DB.batch(keys.map((key) => insert.bind(key, now)));
 }
 
-function memberJson(row: MemberRow) {
+export function memberJson(row: MemberRow) {
   return {
     id: row.id,
     displayName: row.display_name,
     colour: row.colour,
     role: row.role,
+    status: row.status,
     consentAcceptedAt: row.consent_accepted_at,
     joinedAt: row.joined_at,
   };
