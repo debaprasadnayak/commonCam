@@ -210,7 +210,10 @@ private struct GalleryTile: View {
         Color.secondary.opacity(0.15)
             .aspectRatio(1, contentMode: .fit)
             .overlay {
-                if item.isVideo { VideoThumbnail(url: item.downloadUrl) } else { FilteredThumbnail(item: item) }
+                Group {
+                    if item.isVideo { VideoThumbnail(url: item.downloadUrl) } else { FilteredThumbnail(item: item) }
+                }
+                .pendingReviewBlur(item.isHidden, canReveal: false)
             }
             .clipped()
             .overlay(alignment: .topTrailing) {

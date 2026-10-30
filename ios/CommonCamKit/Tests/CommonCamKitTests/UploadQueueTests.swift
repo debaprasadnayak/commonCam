@@ -11,10 +11,14 @@ actor FakeServer: UploadService {
     private(set) var stored: [String: Data] = [:]
     private(set) var confirmedRecipes: [String: FilterRecipe?] = [:]
     private(set) var contentTypes: [String: String] = [:]
+    /// The `sensitive` flag each item was confirmed with.
+    private(set) var flagged: [String: Bool] = [:]
+    private var confirmRefusal: Error?
 
     init(partSize: Int64) { self.partSize = partSize }
 
     func refuseEverything(with error: APIError?) { refuse = error }
+    func refuseConfirm(with error: Error?) { confirmRefusal = error }
 
     func startUpload(bytes: Int64, contentType: String, in groupID: String) async throws -> MultipartUpload {
         if let refuse { throw refuse }
@@ -51,9 +55,11 @@ actor FakeServer: UploadService {
         uploads[itemID]!.completed = true
     }
 
-    func confirmUpload(itemID: String, filterRecipe: FilterRecipe?, in groupID: String) async throws -> GalleryItem {
+    func confirmUpload(itemID: String, filterRecipe: FilterRecipe?, sensitive: Bool, in groupID: String) async throws -> GalleryItem {
+        if let confirmRefusal { throw confirmRefusal }
         let data = try #require(stored[itemID])
         confirmedRecipes[itemID] = filterRecipe
+        flagged[itemID] = sensitive
         return GalleryItem(
             id: itemID, type: "photo", contentType: "image/heic", bytes: Int64(data.count), createdAt: .now,
             contributor: Contributor(memberId: nil, displayName: "Host", colour: "#8E8E93"),

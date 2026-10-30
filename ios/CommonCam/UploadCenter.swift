@@ -18,7 +18,7 @@ final class UploadCenter {
 
     init(api: APIClient) {
         let directory = URL.applicationSupportDirectory.appending(path: "UploadQueue", directoryHint: .isDirectory)
-        queue = UploadQueue(directory: directory, service: api, transport: Self.transport)
+        queue = UploadQueue(directory: directory, service: api, transport: Self.transport, analyzer: AppleSensitiveContentAnalyzer())
         Task { [queue] in
             await queue.observe { uploads in Task { @MainActor in self.uploads = uploads } }
             await self.keepSending()

@@ -72,6 +72,7 @@ struct ItemDetailView: View {
         VStack {
             if let image = showsFiltered ? filtered : plain {
                 Image(uiImage: image).resizable().scaledToFit().frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .pendingReviewBlur(item.isHidden)
             } else {
                 ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
             }

@@ -23,6 +23,8 @@ public struct QueuedUpload: Codable, Equatable, Identifiable, Sendable {
     /// Parts the server is known to have stored.
     public internal(set) var uploadedParts: Set<Int> = []
     var isAssembled = false
+    /// The on-device sensitive-content verdict, taken once before the first confirm and kept across relaunches.
+    var flaggedSensitive: Bool?
     /// HTTP status that made the server refuse this shot for good; it is no longer retried.
     public internal(set) var failure: Int?
 
@@ -42,15 +44,21 @@ public actor UploadQueue {
     private let directory: URL
     private let service: UploadService
     private let transport: PartTransport
+    private let analyzer: SensitiveContentAnalyzer?
     private let now: @Sendable () -> Date
     public private(set) var uploads: [QueuedUpload]
     private var isRunning = false
     private var observer: (@Sendable ([QueuedUpload]) -> Void)?
 
-    public init(directory: URL, service: UploadService, transport: PartTransport, now: @escaping @Sendable () -> Date = { .now }) {
+    /// `analyzer`: checks each shot for likely explicit content before it is confirmed; nil = no check.
+    public init(
+        directory: URL, service: UploadService, transport: PartTransport, analyzer: SensitiveContentAnalyzer? = nil,
+        now: @escaping @Sendable () -> Date = { .now }
+    ) {
         self.directory = directory
         self.service = service
         self.transport = transport
+        self.analyzer = analyzer
         self.now = now
         let saved = try? Data(contentsOf: directory.appending(path: "queue.json"))
         uploads = saved.flatMap { try? Self.decoder.decode([QueuedUpload].self, from: $0) } ?? []
@@ -157,7 +165,14 @@ public actor UploadQueue {
             upload = try update(id) { $0.isAssembled = true }
         }
 
-        let item = try await service.confirmUpload(itemID: itemID, filterRecipe: upload.filterRecipe, in: upload.groupID)
+        if upload.flaggedSensitive == nil {
+            // The analyzer only understands still images; clips are confirmed unflagged.
+            let flagged = if upload.isVideo { false } else { await analyzer?.shouldFlag(imageAt: originalFile(of: upload)) ?? false }
+            upload = try update(id) { $0.flaggedSensitive = flagged }
+        }
+        let item = try await service.confirmUpload(
+            itemID: itemID, filterRecipe: upload.filterRecipe, sensitive: upload.flaggedSensitive == true, in: upload.groupID
+        )
         remove(id)
         return item
     }
