@@ -26,7 +26,7 @@ cd ios && xcodebuild test -project CommonCam.xcodeproj -scheme CommonCam \
   -destination 'platform=iOS Simulator,name=iPhone 18 Pro'
 ```
 
-The app talks to `http://localhost:8787` (set by `APIBaseURL` in `ios/CommonCam-Info.plist`), so run `npm run dev` before launching it in the simulator.
+The app talks to the dev Worker at `https://commoncam-api-dev.dev094u.workers.dev`. The address comes from the `API_BASE_URL` build setting, which `APIBaseURL` in `ios/CommonCam-Info.plist` reads. To use a local Worker, run `npm run dev` and override the setting, for example by adding `API_BASE_URL=http://localhost:8787` to the `xcodebuild` command.
 
 ## Purchases (paid tiers)
 

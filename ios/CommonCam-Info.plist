@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
 	<key>APIBaseURL</key>
-	<string>http://localhost:8787</string>
+	<string>$(API_BASE_URL)</string>
 	<key>NSCameraUsageDescription</key>
 	<string>commonCam uses the camera to scan a group's QR code and to take photos and videos for the shared gallery.</string>
 	<key>NSMicrophoneUsageDescription</key>
