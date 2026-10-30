@@ -1,6 +1,5 @@
 /// <reference types="@cloudflare/vitest-plugin/types" />
 import type { D1Migration } from "cloudflare:test";
-import type { Env } from "../src/index";
 
 declare global {
   namespace Cloudflare {
