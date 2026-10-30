@@ -10,6 +10,7 @@ struct GalleryView: View {
     @State private var isCameraOpen = false
     @State private var uploading = 0
     @State private var errorMessage: String?
+    @State private var reporting: ReportTarget?
 
     var body: some View {
         ScrollView {
@@ -26,8 +27,14 @@ struct GalleryView: View {
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 110), spacing: 2)], spacing: 2) {
                 ForEach(items) { item in
                     GalleryTile(item: item)
+                        .contextMenu {
+                            ItemModerationMenu(api: api, groupID: group.id, item: item, report: { reporting = $0 }, changed: reload)
+                        }
                 }
             }
+            Link("Takedown requests: \(Contact.takedownEmail)", destination: Contact.takedownMailURL)
+                .font(.footnote)
+                .padding()
         }
         .navigationTitle("Gallery")
         .toolbar {
@@ -44,6 +51,9 @@ struct GalleryView: View {
             }
         }
         .refreshable { await reload() }
+        .sheet(item: $reporting) { target in
+            ReportSheet(api: api, groupID: group.id, target: target) { Task { await reload() } }
+        }
     }
 
     private func reload() async {
@@ -84,6 +94,15 @@ private struct GalleryTile: View {
                 }
             }
             .clipped()
+            .overlay(alignment: .topTrailing) {
+                if item.isHidden {
+                    Label("Reported, hidden from guests", systemImage: "eye.slash")
+                        .labelStyle(.iconOnly)
+                        .padding(4)
+                        .background(.ultraThinMaterial, in: Circle())
+                        .padding(4)
+                }
+            }
             .overlay(alignment: .bottomLeading) {
                 Label {
                     Text(item.contributor.displayName).lineLimit(1)
@@ -96,6 +115,6 @@ private struct GalleryTile: View {
                 .padding(4)
             }
             .accessibilityElement(children: .combine)
-            .accessibilityLabel("Photo by \(item.contributor.displayName)")
+            .accessibilityLabel("Photo by \(item.contributor.displayName)\(item.isHidden ? ", reported, hidden from guests" : "")")
     }
 }

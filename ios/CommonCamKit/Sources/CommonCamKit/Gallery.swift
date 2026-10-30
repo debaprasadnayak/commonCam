@@ -56,4 +56,8 @@ public struct GalleryItem: Codable, Equatable, Identifiable, Sendable {
     public let contributor: Contributor
     public let downloadUrl: URL
     public let downloadUrlExpiresAt: Date
+    /// Set only in the host's and co-hosts' view: reported and awaiting their review. Guests never see such items.
+    public var hidden: Bool? = nil
+
+    public var isHidden: Bool { hidden == true }
 }

@@ -1,4 +1,6 @@
+import { isHostOrCoHost } from "./hostControls";
 import type { Env } from "./index";
+import { VISIBLE_TO_VIEWER } from "./moderation";
 
 const UPLOAD_URL_TTL_S = 15 * 60;
 const DOWNLOAD_URL_TTL_S = 15 * 60;
@@ -11,7 +13,7 @@ interface Caller {
   memberId: string | null;
 }
 
-interface ItemRow {
+export interface ItemRow {
   id: string;
   member_id: string | null;
   type: string;
@@ -21,6 +23,7 @@ interface ItemRow {
   created_at: string;
   display_name: string | null;
   colour: string | null;
+  hidden: number;
 }
 
 /**
@@ -137,13 +140,16 @@ async function confirmItem(request: Request, env: Env, groupId: string, deviceId
 
 async function gallery(url: URL, env: Env, groupId: string, deviceId: string) {
   if (!(await findCaller(env, groupId, deviceId))) return new Response("Not found", { status: 404 });
-  const { results } = await env.DB.prepare(`${ITEM_SELECT} WHERE i.group_id = ? AND i.status = 'ready' ORDER BY i.created_at DESC, i.rowid DESC`)
-    .bind(groupId)
+  const owner = await isHostOrCoHost(env, groupId, deviceId);
+  const { results } = await env.DB.prepare(
+    `${ITEM_SELECT} WHERE i.group_id = ?1 AND i.status = 'ready' AND ${VISIBLE_TO_VIEWER} ORDER BY i.created_at DESC, i.rowid DESC`,
+  )
+    .bind(groupId, deviceId, owner ? 1 : 0)
     .all<ItemRow>();
   return Response.json(await Promise.all(results.map((row) => itemJson(env, row, url.origin))));
 }
 
-const ITEM_SELECT = `SELECT i.id, i.member_id, i.type, i.content_type, i.bytes, i.object_key, i.created_at, m.display_name, m.colour
+export const ITEM_SELECT = `SELECT i.id, i.member_id, i.type, i.content_type, i.bytes, i.object_key, i.created_at, i.hidden, m.display_name, m.colour
   FROM items i LEFT JOIN members m ON m.id = i.member_id`;
 
 async function findItem(env: Env, itemId: string): Promise<ItemRow> {
@@ -151,7 +157,7 @@ async function findItem(env: Env, itemId: string): Promise<ItemRow> {
 }
 
 /** The group, if the device is its host or an active member. `memberId` is null for the host. */
-async function findCaller(env: Env, groupId: string, deviceId: string): Promise<Caller | null> {
+export async function findCaller(env: Env, groupId: string, deviceId: string): Promise<Caller | null> {
   const row = await env.DB.prepare(
     `SELECT g.id, g.state, g.ends_at, g.storage_cap_bytes, g.storage_used_bytes, g.host_device_id, m.id AS member_id
      FROM groups g LEFT JOIN members m ON m.group_id = g.id AND m.device_id = ?2 AND m.status = 'active'
@@ -167,7 +173,7 @@ function isOpen(group: Caller["group"]) {
   return group.state === "Active" && Date.parse(group.ends_at) > Date.now();
 }
 
-async function itemJson(env: Env, row: ItemRow, origin: string) {
+export async function itemJson(env: Env, row: ItemRow, origin: string) {
   const exp = String(Math.floor(Date.now() / 1000) + DOWNLOAD_URL_TTL_S);
   return {
     id: row.id,
@@ -180,6 +186,7 @@ async function itemJson(env: Env, row: ItemRow, origin: string) {
       : { memberId: null, ...HOST_CONTRIBUTOR },
     downloadUrl: await signedUrl(env, origin, "GET", row.object_key, exp, "", ""),
     downloadUrlExpiresAt: new Date(Number(exp) * 1000).toISOString(),
+    hidden: row.hidden === 1,
   };
 }
 
