@@ -104,12 +104,21 @@ private struct JoinFlow: View {
     @State var qrToken: String?
     let onJoined: (Membership) -> Void
 
+    @State private var pin: String?
+    @State private var isEnteringPin = false
+
     var body: some View {
         NavigationStack {
             if let qrToken {
-                JoinView(api: api, qrToken: qrToken, onJoined: onJoined)
+                JoinView(api: api, code: .qrToken(qrToken), onJoined: onJoined)
+            } else if let pin {
+                JoinView(api: api, code: .pin(pin), onJoined: onJoined)
+            } else if isEnteringPin {
+                PinEntryView { pin = $0 }
+                    .toolbar { Button("Scan QR") { isEnteringPin = false } }
             } else {
                 ScannerView { qrToken = $0 }
+                    .toolbar { Button("Enter PIN") { isEnteringPin = true } }
             }
         }
     }

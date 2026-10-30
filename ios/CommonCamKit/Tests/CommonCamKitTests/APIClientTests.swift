@@ -127,6 +127,55 @@ private let otter = Member(
         #expect(body?["consent"] as? Bool == true)
     }
 
+    @Test func joinsWithAPinInsteadOfAQRToken() async throws {
+        StubURLProtocol.statusCode = 201
+        StubURLProtocol.responseBody = Data("""
+        {"group":\(groupJSON),"member":\(memberJSON)}
+        """.utf8)
+
+        let membership = try await client.join(pin: "K7MQ2X", displayName: "Dancing Otter", colour: "#FF8800", consentAccepted: true)
+
+        #expect(membership == Membership(group: tasterGroup, member: otter))
+        let request = try #require(StubURLProtocol.requests.first)
+        #expect(request.url?.absoluteString == "https://api.test/join")
+        let body = try JSONSerialization.jsonObject(with: try #require(request.httpBody)) as? [String: Any]
+        #expect(body?["pin"] as? String == "K7MQ2X")
+        #expect(body?["qrToken"] == nil)
+        #expect(body?["consent"] as? Bool == true)
+    }
+
+    @Test func showsThatThePinIsOffByDefault() async throws {
+        StubURLProtocol.responseBody = Data(#"{"pin":null}"#.utf8)
+
+        let pin = try await client.pin(for: "g1")
+
+        #expect(pin == nil)
+        let request = try #require(StubURLProtocol.requests.first)
+        #expect(request.httpMethod == "GET")
+        #expect(request.url?.absoluteString == "https://api.test/groups/g1/pin")
+    }
+
+    @Test func turnsOnOrRotatesThePin() async throws {
+        StubURLProtocol.responseBody = Data(#"{"pin":"K7MQ2X"}"#.utf8)
+
+        let pin = try await client.rotatePin(for: "g1")
+
+        #expect(pin == "K7MQ2X")
+        let request = try #require(StubURLProtocol.requests.first)
+        #expect(request.httpMethod == "POST")
+        #expect(request.url?.absoluteString == "https://api.test/groups/g1/pin")
+    }
+
+    @Test func turnsThePinOff() async throws {
+        StubURLProtocol.responseBody = Data(#"{"pin":null}"#.utf8)
+
+        try await client.turnOffPin(for: "g1")
+
+        let request = try #require(StubURLProtocol.requests.first)
+        #expect(request.httpMethod == "DELETE")
+        #expect(request.url?.absoluteString == "https://api.test/groups/g1/pin")
+    }
+
     @Test func listsAGroupsMembers() async throws {
         StubURLProtocol.responseBody = Data("[\(memberJSON)]".utf8)
 

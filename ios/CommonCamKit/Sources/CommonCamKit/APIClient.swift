@@ -50,6 +50,10 @@ private struct ApprovalToggle: Codable {
     let approvalRequired: Bool
 }
 
+struct PinState: Decodable {
+    let pin: String?
+}
+
 public struct APIError: Error, Equatable {
     public let statusCode: Int
 }
@@ -82,11 +86,36 @@ public struct APIClient: Sendable {
         try await send("GET", "groups/\(groupID)/members")
     }
 
+    /// The group's join PIN, or nil while PIN joining is off (the default). Host only.
+    public func pin(for groupID: String) async throws -> String? {
+        let state: PinState = try await send("GET", "groups/\(groupID)/pin")
+        return state.pin
+    }
+
+    /// Turns PIN joining on, or replaces the PIN so the old one stops working. Host only.
+    public func rotatePin(for groupID: String) async throws -> String {
+        let state: PinState = try await send("POST", "groups/\(groupID)/pin")
+        guard let pin = state.pin else { throw APIError(statusCode: 500) }
+        return pin
+    }
+
+    public func turnOffPin(for groupID: String) async throws {
+        let _: PinState = try await send("DELETE", "groups/\(groupID)/pin")
+    }
+
     /// Joins the group behind a scanned QR. The server refuses unless `consentAccepted` is true.
     public func join(qrToken: String, displayName: String, colour: String, consentAccepted: Bool) async throws -> Membership {
-        let body: [String: any Sendable] = [
-            "qrToken": qrToken, "displayName": displayName, "colour": colour, "consent": consentAccepted,
-        ]
+        try await join(["qrToken": qrToken], displayName: displayName, colour: colour, consentAccepted: consentAccepted)
+    }
+
+    /// Joins with the host's typed PIN instead of a QR; same server-side checks as a QR join.
+    public func join(pin: String, displayName: String, colour: String, consentAccepted: Bool) async throws -> Membership {
+        try await join(["pin": pin], displayName: displayName, colour: colour, consentAccepted: consentAccepted)
+    }
+
+    private func join(_ code: [String: String], displayName: String, colour: String, consentAccepted: Bool) async throws -> Membership {
+        var body: [String: any Sendable] = ["displayName": displayName, "colour": colour, "consent": consentAccepted]
+        body.merge(code) { _, new in new }
         return try await send("POST", "join", body: try JSONSerialization.data(withJSONObject: body))
     }
 

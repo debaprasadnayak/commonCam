@@ -39,6 +39,7 @@ struct HostGroupView: View {
                     Button("New QR code (old one stops working)") { Task { await rotate() } }
                 }
             }
+            PinSection(api: api, group: group)
             if let errorMessage {
                 Section { Text(errorMessage).foregroundStyle(.red) }
             }
