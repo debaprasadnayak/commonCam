@@ -16,6 +16,13 @@ public struct EventGroup: Codable, Equatable, Identifiable, Sendable {
 public struct Invite: Codable, Equatable, Sendable {
     public let qrToken: String
     public let joinUrl: URL
+    public let joiningPaused: Bool
+
+    public init(qrToken: String, joinUrl: URL, joiningPaused: Bool) {
+        self.qrToken = qrToken
+        self.joinUrl = joinUrl
+        self.joiningPaused = joiningPaused
+    }
 }
 
 /// A guest in a group, with the fun name and colour they picked.
@@ -74,7 +81,11 @@ public struct APIClient: Sendable {
         return try await send("POST", "join", body: try JSONSerialization.data(withJSONObject: body))
     }
 
-    private func send<T: Decodable>(_ method: String, _ path: String, body: Data? = nil) async throws -> T {
+    func send<T: Decodable>(_ method: String, _ path: String, body: Data? = nil) async throws -> T {
+        try Self.decoder.decode(T.self, from: try await sendForData(method, path, body: body))
+    }
+
+    func sendForData(_ method: String, _ path: String, body: Data? = nil) async throws -> Data {
         var request = URLRequest(url: baseURL.appending(path: path))
         request.httpMethod = method
         request.setValue("Bearer \(try identity.token())", forHTTPHeaderField: "Authorization")
@@ -85,7 +96,7 @@ public struct APIClient: Sendable {
         let (data, response) = try await session.data(for: request)
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
         guard (200..<300).contains(status) else { throw APIError(statusCode: status) }
-        return try Self.decoder.decode(T.self, from: data)
+        return data
     }
 
     private static let decoder: JSONDecoder = {

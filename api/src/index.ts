@@ -1,3 +1,4 @@
+import { handleHostControls } from "./hostControls";
 import { handleJoin, handlePublic } from "./join";
 import { TIERS } from "./tiers";
 
@@ -64,6 +65,8 @@ export default {
 
     const joinResponse = await handleJoin(request, url, env, deviceId);
     if (joinResponse) return joinResponse;
+    const hostControlsResponse = await handleHostControls(request, url, env, deviceId);
+    if (hostControlsResponse) return hostControlsResponse;
 
     return new Response("Not found", { status: 404 });
   },

@@ -1,3 +1,4 @@
+import { isHostOrCoHost, isJoiningPaused, joinRefusal } from "./hostControls";
 import { type Env, type GroupRow, toJson } from "./index";
 
 // Placeholders until the app is in App Store Connect and has an Apple team (see notes).
@@ -45,11 +46,9 @@ export async function handleJoin(request: Request, url: URL, env: Env, deviceId:
   return null;
 }
 
-async function invite(env: Env, url: URL, groupId: string, deviceId: string): Promise<Response> {
-  const group = await env.DB.prepare("SELECT qr_token FROM groups WHERE id = ? AND host_device_id = ?")
-    .bind(groupId, deviceId)
-    .first<{ qr_token: string | null }>();
-  if (!group) return new Response("Not found", { status: 404 });
+export async function invite(env: Env, url: URL, groupId: string, deviceId: string): Promise<Response> {
+  if (!(await isHostOrCoHost(env, groupId, deviceId))) return new Response("Not found", { status: 404 });
+  const group = (await env.DB.prepare("SELECT qr_token FROM groups WHERE id = ?").bind(groupId).first<{ qr_token: string | null }>())!;
 
   let qrToken = group.qr_token;
   if (!qrToken) {
@@ -58,7 +57,7 @@ async function invite(env: Env, url: URL, groupId: string, deviceId: string): Pr
       .run();
     qrToken = (await env.DB.prepare("SELECT qr_token FROM groups WHERE id = ?").bind(groupId).first<string>("qr_token"))!;
   }
-  return Response.json({ qrToken, joinUrl: `${url.origin}/join/${qrToken}` });
+  return Response.json({ qrToken, joinUrl: `${url.origin}/join/${qrToken}`, joiningPaused: await isJoiningPaused(env, groupId) });
 }
 
 async function members(env: Env, groupId: string, deviceId: string): Promise<Response> {
@@ -99,10 +98,14 @@ async function join(request: Request, env: Env, deviceId: string): Promise<Respo
     return new Response("This group is no longer open", { status: 410 });
   }
 
-  const existing = await env.DB.prepare(`SELECT ${MEMBER_COLUMNS} FROM members WHERE group_id = ? AND device_id = ?`)
+  const existing = await env.DB.prepare(`SELECT ${MEMBER_COLUMNS}, status FROM members WHERE group_id = ? AND device_id = ?`)
     .bind(group.id, deviceId)
-    .first<MemberRow>();
-  if (existing) return Response.json({ group: toJson(group), member: memberJson(existing) });
+    .first<MemberRow & { status: string }>();
+  if (existing && existing.status !== "removed" && existing.status !== "banned") {
+    return Response.json({ group: toJson(group), member: memberJson(existing) });
+  }
+  const refusal = await joinRefusal(env, group.id, existing?.status);
+  if (refusal) return refusal;
 
   const displayName = typeof body.displayName === "string" ? body.displayName.trim() : "";
   if (body.consent !== true) return new Response("Consent is required to join", { status: 400 });
@@ -121,14 +124,21 @@ async function join(request: Request, env: Env, deviceId: string): Promise<Respo
     joined_at: now,
   };
   // Conditional insert so concurrent joins cannot overshoot the cap. The host takes one seat.
-  const { meta } = await env.DB.prepare(
+  // A removed member rejoining reuses their row (and id).
+  const memberId = await env.DB.prepare(
     `INSERT INTO members (id, group_id, device_id, display_name, colour, role, status, consent_accepted_at, joined_at)
      SELECT ?1, ?2, ?3, ?4, ?5, ?6, 'active', ?7, ?8
-     WHERE (SELECT COUNT(*) FROM members WHERE group_id = ?2 AND status = 'active') + 1 < ?9`,
+     WHERE (SELECT COUNT(*) FROM members WHERE group_id = ?2 AND status = 'active') + 1 < ?9
+     ON CONFLICT (group_id, device_id) DO UPDATE SET display_name = excluded.display_name, colour = excluded.colour,
+       role = excluded.role, status = 'active', consent_accepted_at = excluded.consent_accepted_at,
+       joined_at = excluded.joined_at
+     WHERE members.status = 'removed'
+     RETURNING id`,
   )
     .bind(member.id, group.id, deviceId, member.display_name, member.colour, member.role, now, now, group.people_cap)
-    .run();
-  if (meta.changes === 0) return new Response("This group is full", { status: 409 });
+    .first<string>("id");
+  if (!memberId) return new Response("This group is full", { status: 409 });
+  member.id = memberId;
 
   return Response.json({ group: toJson(group), member: memberJson(member) }, { status: 201 });
 }

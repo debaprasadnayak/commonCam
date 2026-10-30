@@ -97,11 +97,11 @@ private let otter = Member(
     }
 
     @Test func fetchesTheHostsInvite() async throws {
-        StubURLProtocol.responseBody = Data(#"{"qrToken":"tok","joinUrl":"https://api.test/join/tok"}"#.utf8)
+        StubURLProtocol.responseBody = Data(#"{"qrToken":"tok","joinUrl":"https://api.test/join/tok","joiningPaused":false}"#.utf8)
 
         let invite = try await client.invite(for: "g1")
 
-        #expect(invite == Invite(qrToken: "tok", joinUrl: URL(string: "https://api.test/join/tok")!))
+        #expect(invite == Invite(qrToken: "tok", joinUrl: URL(string: "https://api.test/join/tok")!, joiningPaused: false))
         let request = try #require(StubURLProtocol.requests.first)
         #expect(request.httpMethod == "GET")
         #expect(request.url?.absoluteString == "https://api.test/groups/g1/invite")
@@ -143,6 +143,41 @@ private let otter = Member(
         await #expect(throws: APIError(statusCode: 409)) {
             try await client.join(qrToken: "tok", displayName: "X", colour: "#000000", consentAccepted: true)
         }
+    }
+
+    @Test func pausesJoining() async throws {
+        StubURLProtocol.responseBody = Data(#"{"joiningPaused":true}"#.utf8)
+
+        let paused = try await client.setJoiningPaused(true, for: "g1")
+
+        #expect(paused)
+        let request = try #require(StubURLProtocol.requests.first)
+        #expect(request.httpMethod == "PUT")
+        #expect(request.url?.absoluteString == "https://api.test/groups/g1/joining")
+        #expect(request.httpBody == Data(#"{"paused":true}"#.utf8))
+    }
+
+    @Test func rotatesTheQR() async throws {
+        StubURLProtocol.responseBody = Data(#"{"qrToken":"new","joinUrl":"https://api.test/join/new","joiningPaused":true}"#.utf8)
+
+        let invite = try await client.rotateInvite(for: "g1")
+
+        #expect(invite == Invite(qrToken: "new", joinUrl: URL(string: "https://api.test/join/new")!, joiningPaused: true))
+        let request = try #require(StubURLProtocol.requests.first)
+        #expect(request.httpMethod == "POST")
+        #expect(request.url?.absoluteString == "https://api.test/groups/g1/invite/rotate")
+    }
+
+    @Test(arguments: [(MemberAction.remove, "remove"), (.ban, "ban"), (.makeCoHost, "co-host")])
+    func appliesAMemberAction(action: MemberAction, path: String) async throws {
+        StubURLProtocol.statusCode = 204
+        StubURLProtocol.responseBody = Data()
+
+        try await client.perform(action, on: "m1", in: "g1")
+
+        let request = try #require(StubURLProtocol.requests.first)
+        #expect(request.httpMethod == "POST")
+        #expect(request.url?.absoluteString == "https://api.test/groups/g1/members/m1/\(path)")
     }
 
     @Test func failsOnAnErrorStatus() async throws {

@@ -27,8 +27,9 @@ struct ContentView: View {
                     Section("Joined") {
                         ForEach(joined, id: \.group.id) { membership in
                             NavigationLink {
-                                List { MembersSection(api: api, group: membership.group) }
-                                    .navigationTitle(membership.member.displayName)
+                                HostGroupView(
+                                    api: api, group: membership.group, title: membership.member.displayName, isHost: false
+                                )
                             } label: {
                                 Text("\(membership.group.tier.capitalized) group as \(membership.member.displayName)")
                             }
