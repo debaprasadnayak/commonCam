@@ -4,6 +4,7 @@ import { handleHostControls } from "./hostControls";
 import { handleJoin, handlePublic } from "./join";
 import { handlePin } from "./pin";
 import { handleMedia, handleSignedMedia } from "./media";
+import { handleModeration } from "./moderation";
 import { TIERS } from "./tiers";
 
 export interface Env {
@@ -87,6 +88,8 @@ export default {
     if (mediaResponse) return mediaResponse;
     const deleteItemResponse = await handleDeleteItem(request, url, env, deviceId);
     if (deleteItemResponse) return deleteItemResponse;
+    const moderationResponse = await handleModeration(request, url, env, deviceId);
+    if (moderationResponse) return moderationResponse;
 
     return new Response("Not found", { status: 404 });
   },

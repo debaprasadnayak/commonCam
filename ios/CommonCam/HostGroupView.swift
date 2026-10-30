@@ -48,6 +48,7 @@ struct HostGroupView: View {
             }
             if isHost || invite != nil {
                 ApprovalSection(api: api, group: group)
+                ReportsSection(api: api, group: group)
             }
             MembersSection(api: api, group: group, canManage: invite != nil)
         }
@@ -90,6 +91,7 @@ struct MembersSection: View {
     var canManage = false
 
     @State private var members: [Member] = []
+    @State private var reporting: ReportTarget?
 
     var body: some View {
         Section("Members (\(members.count + 1) of \(group.peopleCap), including host)") {
@@ -98,6 +100,12 @@ struct MembersSection: View {
                     Text(member.role == "co-host" ? "\(member.displayName) · co-host" : member.displayName)
                 } icon: {
                     Circle().fill(Color(hex: member.colour)).frame(width: 14, height: 14)
+                }
+                .contextMenu {
+                    Button("Report…", systemImage: "flag") { reporting = ReportTarget(kind: .member(id: member.id, name: member.displayName)) }
+                    Button("Block", systemImage: "hand.raised", role: .destructive) {
+                        Task { try? await api.block(memberID: member.id, in: group.id) }
+                    }
                 }
                 .swipeActions {
                     if canManage {
@@ -110,6 +118,7 @@ struct MembersSection: View {
                 }
             }
         }
+        .sheet(item: $reporting) { ReportSheet(api: api, groupID: group.id, target: $0) }
         .task {
             while !Task.isCancelled {
                 await refresh()

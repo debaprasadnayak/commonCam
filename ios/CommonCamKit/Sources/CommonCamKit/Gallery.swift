@@ -58,4 +58,8 @@ public struct GalleryItem: Codable, Equatable, Identifiable, Sendable {
     public let downloadUrlExpiresAt: Date
     /// Whether this device may delete it: its own upload, or any item for the host and co-hosts.
     public var canDelete = false
+    /// Set only in the host's and co-hosts' view: reported and awaiting their review. Guests never see such items.
+    public var hidden: Bool? = nil
+
+    public var isHidden: Bool { hidden == true }
 }
