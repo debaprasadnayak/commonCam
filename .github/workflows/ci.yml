@@ -1,13 +1,25 @@
 name: CI
 
+# macOS minutes count 10x against the Actions quota, so CI skips draft PRs and feature-branch pushes.
+# Run it by hand on any branch with: gh workflow run CI --ref <branch>
 on:
   push:
+    branches: [main]
+    paths-ignore: ["**.md", "docs/**", "*.html"]
   pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths-ignore: ["**.md", "docs/**", "*.html"]
   workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   api:
     name: Worker API tests
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -24,6 +36,7 @@ jobs:
 
   ios:
     name: iOS tests
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4

@@ -34,6 +34,10 @@ The app talks to the dev Worker at `https://commoncam-api-dev.dev094u.workers.de
 - The API activates a paid group only from an App Store signed transaction that chains to Apple Root CA - G3 (`api/src/appStore.ts`); each transaction id is accepted once. Worker tests use a locally generated stand-in PKI (`api/test/support/fakeAppStore.ts`).
 - Purchases made against the local `.storekit` file are signed by Xcode, not Apple, so `npm run dev` rejects them (403); the purchase stays unfinished in StoreKit. End-to-end activation needs App Store Connect sandbox products.
 
+## Continuous integration
+
+CI runs on pushes to `main`, on non-draft pull requests to `main`, and on demand. Draft PRs and pushes to other branches don't trigger it, because the iOS job runs on macOS and macOS minutes count 10× against the Actions quota. Run the tests locally while building, and start CI on a branch with `gh workflow run CI --ref <branch>` when you need it. A newer run on the same ref cancels the older one, and changes to docs alone don't trigger CI.
+
 ## Cloudflare dev deployment
 
 The `deploy-dev` GitHub Actions job deploys the API to `commoncam-api-dev` on pushes to `main` (or a manual run of the CI workflow), after the Worker API tests pass, applying any new D1 migrations to the remote `commoncam` database first. Configure these repository Actions secrets before merging or pushing the workflow to `main`:
