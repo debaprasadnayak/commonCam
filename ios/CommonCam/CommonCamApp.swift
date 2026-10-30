@@ -11,6 +11,7 @@ struct CommonCamApp: App {
     init() {
         let api = APIClient(baseURL: Bundle.main.apiBaseURL, identity: DeviceIdentity(store: KeychainTokenStore()))
         self.api = api
+        PushNotifications.api = api
         _uploads = State(initialValue: UploadCenter(api: api))
     }
 
@@ -24,6 +25,7 @@ struct CommonCamApp: App {
                     try await api.createPaidGroup(tier: tier, signedTransaction: signedTransaction)
                 })
                 .environment(uploads)
+                .task { await PushNotifications.requestPermissionAndRegister() }
             }
         }
         .onChange(of: scenePhase) { _, phase in

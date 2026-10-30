@@ -1,5 +1,6 @@
 import { isHostOrCoHost } from "./hostControls";
 import type { Env } from "./index";
+import { syncStorageWarnings } from "./push";
 
 /** `DELETE /groups/:id/items/:itemId`: contributors delete their own items; the host and co-hosts delete any. */
 export async function handleDeleteItem(request: Request, url: URL, env: Env, deviceId: string): Promise<Response | null> {
@@ -46,6 +47,7 @@ export async function deleteItem(env: Env, groupId: string, itemId: string): Pro
   ]);
   // R2 delete is idempotent; if it fails after the row is gone the object is orphaned, never shown.
   await env.MEDIA.delete(item.object_key);
+  await syncStorageWarnings(env, groupId);
 }
 
 async function isActiveMember(env: Env, groupId: string, deviceId: string) {

@@ -4,6 +4,7 @@ import { isHostOrCoHost } from "./hostControls";
 import type { Env } from "./index";
 import { isOpen } from "./media";
 import { isReplayedTransaction, verifyPurchase } from "./purchases";
+import { syncStorageWarnings } from "./push";
 import { addOnForProductId, parseUpgradeProductId, upgradeIncrease, type LimitIncrease, type Tier } from "./tiers";
 
 const ADD_ON_SKU_PREFIX = "app.commoncam.addon.";
@@ -37,6 +38,7 @@ export async function handleUpgrades(request: Request, url: URL, env: Env, devic
     ? await applyPurchase(env.DB, groupId, tier, upgradeIncrease(upgrade.from, upgrade.to), transaction, upgrade.to)
     : await applyPurchase(env.DB, groupId, tier, addOn!, transaction);
   if (applied instanceof Response) return applied;
+  await syncStorageWarnings(env, groupId);
   return Response.json(toJson((await loadGroup(env.DB, groupId))!));
 }
 

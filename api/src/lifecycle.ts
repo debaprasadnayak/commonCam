@@ -1,4 +1,5 @@
 import type { Env } from "./index";
+import { sendGraceReminders } from "./push";
 
 /**
  * The scheduled lifecycle job (ARCHITECTURE.md section 6), run hourly by the cron trigger in wrangler.jsonc.
@@ -6,6 +7,7 @@ import type { Env } from "./index";
  */
 export async function runLifecycle(env: Env, now: number): Promise<void> {
   await enterGrace(env, now);
+  await sendGraceReminders(env, now);
   await deleteAfterGrace(env, now);
 }
 
@@ -65,6 +67,7 @@ async function deleteGroup(env: Env, groupId: string, now: number) {
     env.DB.prepare(`DELETE FROM multipart_uploads WHERE item_id IN (${itemsOf})`).bind(groupId),
     env.DB.prepare("DELETE FROM reports WHERE group_id = ?").bind(groupId),
     env.DB.prepare("DELETE FROM blocks WHERE group_id = ?").bind(groupId),
+    env.DB.prepare("DELETE FROM notifications_sent WHERE group_id = ?").bind(groupId),
     env.DB.prepare("DELETE FROM items WHERE group_id = ?").bind(groupId),
     env.DB.prepare("DELETE FROM members WHERE group_id = ?").bind(groupId),
     env.DB.prepare(

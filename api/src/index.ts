@@ -11,6 +11,7 @@ import { handleModeration } from "./moderation";
 import { handleMultipart, handleSignedParts } from "./multipart";
 import { runLifecycle } from "./lifecycle";
 import { createPaidGroup } from "./purchases";
+import { handlePushToken } from "./push";
 import { isPaidTier } from "./tiers";
 import { handleStorageCap } from "./storageCap";
 import { handleUpgrades } from "./upgrades";
@@ -24,6 +25,12 @@ export interface Env {
   APPLE_BUNDLE_ID: string;
   /** Days a group stays read-only after its paid period before server media is deleted (wrangler `vars`). */
   GRACE_DAYS: string;
+  /** APNs token auth (push.ts / apns.ts). Unset → pushes are skipped with a log line. APNS_PRIVATE_KEY is a secret (.p8 PEM). */
+  APNS_KEY_ID?: string;
+  APNS_TEAM_ID?: string;
+  APNS_PRIVATE_KEY?: string;
+  /** "production" → api.push.apple.com; anything else → the sandbox (development builds). */
+  APNS_ENV?: string;
 }
 
 export { toJson, type GroupRow } from "./groups";
@@ -62,6 +69,9 @@ export default {
         .all<GroupRow>();
       return Response.json(results.map(toJson));
     }
+
+    const pushTokenResponse = await handlePushToken(request, url, env, deviceId);
+    if (pushTokenResponse) return pushTokenResponse;
 
     const extensionResponse = await handleExtension(request, url, env, deviceId);
     if (extensionResponse) return extensionResponse;
