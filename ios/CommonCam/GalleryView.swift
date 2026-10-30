@@ -25,7 +25,7 @@ struct GalleryView: View {
             }
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 110), spacing: 2)], spacing: 2) {
                 ForEach(items) { item in
-                    GalleryTile(item: item)
+                    NavigationLink { ItemDetailView(item: item) } label: { GalleryTile(item: item) }
                 }
             }
         }
@@ -77,11 +77,7 @@ private struct GalleryTile: View {
         Color.secondary.opacity(0.15)
             .aspectRatio(1, contentMode: .fit)
             .overlay {
-                AsyncImage(url: item.downloadUrl) { image in
-                    image.resizable().scaledToFill()
-                } placeholder: {
-                    ProgressView()
-                }
+                FilteredThumbnail(item: item)
             }
             .clipped()
             .overlay(alignment: .bottomLeading) {

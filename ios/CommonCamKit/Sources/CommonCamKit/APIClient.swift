@@ -158,8 +158,13 @@ public struct APIClient: Sendable {
             "POST", "groups/\(groupID)/uploads", body: try JSONSerialization.data(withJSONObject: ask)
         )
         try await upload(photo, to: ticket)
-        let confirm = try JSONSerialization.data(withJSONObject: ["itemId": ticket.itemId])
+        let confirm = try JSONEncoder().encode(Confirm(itemId: ticket.itemId, filterRecipe: photo.filterRecipe))
         return try await send("POST", "groups/\(groupID)/items", body: confirm)
+    }
+
+    private struct Confirm: Encodable {
+        let itemId: String
+        let filterRecipe: FilterRecipe?
     }
 
     /// The signed URL is the credential, so no device token is sent with the bytes.

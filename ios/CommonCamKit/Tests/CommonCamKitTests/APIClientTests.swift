@@ -343,4 +343,38 @@ private let otter = Member(
         #expect(items == [otterPhoto])
         #expect(StubURLProtocol.requests.first?.url?.absoluteString == "https://api.test/groups/g1/items")
     }
+
+    @Test func confirmsAFilteredPhotoWithItsRecipeSoTheOriginalStaysUntouched() async throws {
+        let original = Data([0x00, 0x01, 0xFE, 0xFF])
+        let recipe = FilterRecipe(id: "golden-hour", version: 1, params: ["intensity": 0.8])
+        StubURLProtocol.queue = [
+            (201, Data(#"{"itemId":"i1","uploadUrl":"https://api.test/media/groups/g1/i1?sig=s","expiresAt":"2026-10-30T08:15:00.000Z"}"#.utf8)),
+            (200, Data()),
+            (201, Data(itemJSON.utf8)),
+        ]
+
+        _ = try await client.share(CapturedPhoto(data: original, format: .heic, filterRecipe: recipe), in: "g1")
+
+        let requests = StubURLProtocol.requests
+        try #require(requests.count == 3)
+        #expect(requests[1].httpBody == original)
+        let confirm = try JSONSerialization.jsonObject(with: try #require(requests[2].httpBody)) as? [String: Any]
+        #expect(confirm?["itemId"] as? String == "i1")
+        let sent = confirm?["filterRecipe"] as? [String: Any]
+        #expect(sent?["id"] as? String == "golden-hour")
+        #expect(sent?["version"] as? Int == 1)
+        #expect((sent?["params"] as? [String: Double]) == ["intensity": 0.8])
+    }
+
+    @Test func listsEachItemsFilterRecipe() async throws {
+        let filtered = itemJSON.replacingOccurrences(
+            of: #""bytes":4,"#, with: #""bytes":4,"filterRecipe":{"id":"ink","version":2,"params":{"contrast":1.2}},"#
+        )
+        let unfiltered = itemJSON.replacingOccurrences(of: #""bytes":4,"#, with: #""bytes":4,"filterRecipe":null,"#)
+        StubURLProtocol.responseBody = Data("[\(filtered),\(unfiltered)]".utf8)
+
+        let items = try await client.gallery(of: "g1")
+
+        #expect(items.map(\.filterRecipe) == [FilterRecipe(id: "ink", version: 2, params: ["contrast": 1.2]), nil])
+    }
 }
