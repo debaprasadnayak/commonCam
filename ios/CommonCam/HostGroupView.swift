@@ -5,7 +5,7 @@ import SwiftUI
 /// the invite only loads for them, so its presence decides what is shown.
 struct HostGroupView: View {
     let api: APIClient
-    let group: EventGroup
+    @State var group: EventGroup
     var title: String?
     var isHost = true
 
@@ -15,7 +15,7 @@ struct HostGroupView: View {
     var body: some View {
         List {
             if isHost && group.isReadOnly {
-                GraceSection(api: api, group: group)
+                GraceSection(api: api, group: $group)
             }
             if isHost || invite != nil {
                 Section("Scan to join") {
@@ -50,6 +50,8 @@ struct HostGroupView: View {
                 NavigationLink("Shared gallery") { GalleryView(api: api, group: group) }
             }
             if isHost || invite != nil {
+                StorageSection(api: api, group: group)
+                if !group.isReadOnly { UpgradeSection(api: api, group: $group) }
                 ApprovalSection(api: api, group: group)
                 ReportsSection(api: api, group: group)
             }

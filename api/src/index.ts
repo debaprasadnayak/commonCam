@@ -1,3 +1,4 @@
+import { countGroupCreated } from "./analytics";
 import { handleApproval } from "./approval";
 import { handleDeleteItem } from "./deleteItem";
 import { insertTasterGroup, newGroupRow, toJson, type GroupRow } from "./groups";
@@ -11,6 +12,8 @@ import { handleMultipart, handleSignedParts } from "./multipart";
 import { runLifecycle } from "./lifecycle";
 import { createPaidGroup } from "./purchases";
 import { isPaidTier } from "./tiers";
+import { handleStorageCap } from "./storageCap";
+import { handleUpgrades } from "./upgrades";
 
 export interface Env {
   DB: D1Database;
@@ -45,7 +48,7 @@ export default {
       if (isPaidTier(body.tier)) return createPaidGroup(env, deviceId, body.tier, body.signedTransaction);
       if (body.tier !== "taster") return new Response("Unknown tier", { status: 400 });
       const row = newGroupRow("taster");
-      const { meta } = await insertTasterGroup(env.DB, deviceId, row).run();
+      const [{ meta }] = await env.DB.batch([insertTasterGroup(env.DB, deviceId, row), countGroupCreated(env.DB, row.id)]);
       if (meta.changes === 0) return new Response("Free Taster limit reached for this device", { status: 403 });
       return Response.json(toJson(row), { status: 201 });
     }
@@ -82,6 +85,10 @@ export default {
     if (moderationResponse) return moderationResponse;
     const multipartResponse = await handleMultipart(request, url, env, deviceId);
     if (multipartResponse) return multipartResponse;
+    const upgradesResponse = await handleUpgrades(request, url, env, deviceId);
+    if (upgradesResponse) return upgradesResponse;
+    const storageCapResponse = await handleStorageCap(request, url, env, deviceId);
+    if (storageCapResponse) return storageCapResponse;
 
     return new Response("Not found", { status: 404 });
   },

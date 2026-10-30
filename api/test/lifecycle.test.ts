@@ -18,7 +18,7 @@ async function cronAt(at: number) {
 
 let nextTransactionId = 3_000_000_000;
 
-async function signed(productId: string) {
+async function signed(productId: string, appAccountToken?: string) {
   const id = String(nextTransactionId++);
   const pki = env.TEST_APPLE_PKI;
   const key = await crypto.subtle.importKey("jwk", pki.leafKey, { name: "ECDSA", namedCurve: "P-256" }, false, ["sign"]);
@@ -31,6 +31,9 @@ async function signed(productId: string) {
     signedDate: Date.now(),
     type: "Consumable",
     environment: "Sandbox",
+    price: 2990,
+    currency: "USD",
+    appAccountToken,
   };
   return signTransaction(payload, pki.chain, key);
 }
@@ -38,6 +41,11 @@ async function signed(productId: string) {
 async function newPartyGroup(host: string) {
   const signedTransaction = await signed("app.commoncam.tier.party");
   return (await api("/groups", { method: "POST", token: host, body: JSON.stringify({ tier: "party", signedTransaction }) })).json<any>();
+}
+
+/** The extension bought for `groupId` (StoreKit appAccountToken), as the app sends it. */
+function extensionFor(groupId: string) {
+  return signed("app.commoncam.extension", groupId);
 }
 
 function extend(token: string, groupId: string, signedTransaction: unknown) {
@@ -163,6 +171,10 @@ describe("end of grace: Grace → Deleted", () => {
     expect(await objectKeys(`groups/${group.id}/`)).toHaveLength(2);
     expect(await rowsFor(group.id)).toEqual({ items: 3, members: 1, reports: 1, blocks: 1, multipartUploads: 1, multipartParts: 1 });
 
+    const statsSql = "SELECT tier, SUM(groups_created) AS groups, SUM(uploads) AS uploads, SUM(upload_bytes) AS bytes FROM daily_stats GROUP BY tier ORDER BY tier";
+    const statsBefore = (await env.DB.prepare(statsSql).all()).results;
+    expect(statsBefore).toContainEqual(expect.objectContaining({ tier: "taster" }));
+
     await cronAt(Date.parse(group.endsAt) + 60_000);
     const graceEndsAt = Date.parse((await hostedGroup(host, group.id)).graceEndsAt);
     await cronAt(graceEndsAt - 60_000);
@@ -178,6 +190,9 @@ describe("end of grace: Grace → Deleted", () => {
 
     expect(await (await api(`/groups/${group.id}/items`, { token: guest })).status).toBe(404);
     expect(await (await api(`/groups/${group.id}/items`, { token: host })).json()).toEqual([]);
+
+    // Anonymous analytics are not tied to the group, so they survive its deletion.
+    expect((await env.DB.prepare(statsSql).all()).results).toEqual(statsBefore);
 
     // A group whose paid period runs longer (Party: 5 days) keeps its media.
     expect(await objectKeys(`groups/${bystander.id}/`)).toHaveLength(1);
@@ -205,7 +220,8 @@ describe("POST /groups/:id/extend (paid extension)", () => {
     expect((await hostedGroup(host, group.id)).state).toBe("Grace");
 
     const before = Date.now();
-    const res = await extend(host, group.id, await signed("app.commoncam.extension"));
+    const transaction = await extensionFor(group.id);
+    const res = await extend(host, group.id, transaction);
 
     expect(res.status).toBe(200);
     const extended = await res.json<any>();
@@ -214,40 +230,62 @@ describe("POST /groups/:id/extend (paid extension)", () => {
     expect(Date.parse(extended.endsAt)).toBeLessThanOrEqual(Date.now() + 7 * DAY_MS);
     expect(await hostedGroup(host, group.id)).toMatchObject({ state: "Active", endsAt: extended.endsAt });
     expect((await share(host, group.id, 10)).id).toBeTruthy();
+    const order = await env.DB.prepare("SELECT sku, amount_milliunits, credit_applied FROM orders WHERE group_id = ?").bind(group.id).first();
+    expect(order).toEqual({ sku: "app.commoncam.extension", amount_milliunits: 2990, credit_applied: 0 });
 
     // The extended period ends and the cycle starts again.
     await cronAt(Date.parse(extended.endsAt) + 60_000);
     expect((await hostedGroup(host, group.id)).state).toBe("Grace");
   });
 
-  it("refuses wrong products, forged or replayed transactions, non-hosts, running and deleted groups", async () => {
+  it("refuses wrong products, forged transactions, other groups' extensions, non-hosts, running and deleted groups", async () => {
     const host = `extend-no-${crypto.randomUUID()}`;
     const group = await newGroup(host);
-    expect((await extend(host, group.id, await signed("app.commoncam.extension"))).status).toBe(409);
+    const guest = `extend-no-guest-${crypto.randomUUID()}`;
+    await join(guest, group.id, host);
+    // 400 (not 409) while running, so the app keeps the transaction unfinished and redeems it after expiry.
+    expect((await extend(host, group.id, await extensionFor(group.id))).status).toBe(400);
 
     await cronAt(Date.parse(group.endsAt) + 60_000);
     expect((await extend(host, group.id, undefined)).status).toBe(400);
-    expect((await extend(host, group.id, await signed("app.commoncam.tier.party"))).status).toBe(400);
+    expect((await extend(host, group.id, await signed("app.commoncam.tier.party", group.id))).status).toBe(400);
+    expect((await extend(host, group.id, await extensionFor(crypto.randomUUID()))).status).toBe(400);
+    expect((await extend(host, group.id, await signed("app.commoncam.extension"))).status).toBe(400);
     expect((await extend(host, group.id, "not.a.jws")).status).toBe(403);
-    expect((await extend("someone-else", group.id, await signed("app.commoncam.extension"))).status).toBe(404);
+    expect((await extend("someone-else", group.id, await extensionFor(group.id))).status).toBe(404);
+    expect((await extend(guest, group.id, await extensionFor(group.id))).status).toBe(404);
     expect((await hostedGroup(host, group.id)).state).toBe("Grace");
 
     const graceEndsAt = Date.parse((await hostedGroup(host, group.id)).graceEndsAt);
     await cronAt(graceEndsAt + 60_000);
-    expect((await extend(host, group.id, await signed("app.commoncam.extension"))).status).toBe(410);
+    expect((await extend(host, group.id, await extensionFor(group.id))).status).toBe(410);
+    const { results: orders } = await env.DB.prepare("SELECT 1 FROM orders WHERE group_id = ?").bind(group.id).all();
+    expect(orders).toEqual([]);
   });
 
   it("refuses to redeem the same transaction twice", async () => {
     const host = `extend-replay-${crypto.randomUUID()}`;
-    const first = await newGroup(host);
-    await cronAt(Date.parse(first.endsAt) + 60_000);
-    const transaction = await signed("app.commoncam.extension");
-    expect((await extend(host, first.id, transaction)).status).toBe(200);
+    const group = await newGroup(host);
+    await cronAt(Date.parse(group.endsAt) + 60_000);
+    const transaction = await extensionFor(group.id);
+    const extended = await (await extend(host, group.id, transaction)).json<any>();
 
-    const otherHost = `extend-replay-other-${crypto.randomUUID()}`;
-    const second = await newGroup(otherHost);
-    await cronAt(Date.parse(second.endsAt) + 60_000);
-    expect((await extend(otherHost, second.id, transaction)).status).toBe(409);
-    expect((await hostedGroup(otherHost, second.id)).state).toBe("Grace");
+    // The extended period ends too; the old transaction cannot buy another one.
+    await cronAt(Date.parse(extended.endsAt) + 60_000);
+    expect((await extend(host, group.id, transaction)).status).toBe(409);
+    expect(await hostedGroup(host, group.id)).toMatchObject({ state: "Grace", endsAt: extended.endsAt });
+  });
+
+  it("extends a paid group with its limits intact, from now even if it ended days ago", async () => {
+    const host = `extend-party-${crypto.randomUUID()}`;
+    const group = await newPartyGroup(host);
+    await env.DB.prepare("UPDATE groups SET ends_at = ? WHERE id = ?").bind(new Date(Date.now() - 10 * DAY_MS).toISOString(), group.id).run();
+    await cronAt(Date.now());
+
+    const before = Date.now();
+    const extended = await (await extend(host, group.id, await extensionFor(group.id))).json<any>();
+
+    expect(extended).toMatchObject({ state: "Active", tier: "party", peopleCap: group.peopleCap, storageCapBytes: group.storageCapBytes });
+    expect(Date.parse(extended.endsAt)).toBeGreaterThanOrEqual(before + 7 * DAY_MS);
   });
 });

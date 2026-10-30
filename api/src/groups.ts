@@ -1,3 +1,4 @@
+import { storageJson } from "./storageCap";
 import { TASTER_LIMIT_PER_DEVICE, TIERS, type Tier } from "./tiers";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -57,8 +58,7 @@ export function toJson(row: GroupRow) {
     tier: row.tier,
     state: row.state,
     peopleCap: row.people_cap,
-    storageCapBytes: row.storage_cap_bytes,
-    storageUsedBytes: row.storage_used_bytes,
+    ...storageJson(row),
     startsAt: row.starts_at,
     endsAt: row.ends_at,
     graceEndsAt: row.grace_ends_at ?? null,

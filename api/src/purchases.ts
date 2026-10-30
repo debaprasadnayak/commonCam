@@ -1,4 +1,5 @@
-import { InvalidTransaction, verifySignedTransaction } from "./appStore";
+import { countGroupCreated } from "./analytics";
+import { InvalidTransaction, verifySignedTransaction, type AppStoreTransaction } from "./appStore";
 import { insertGroup, newGroupRow, toJson } from "./groups";
 import type { Env } from "./index";
 import { TIERS, type PaidTier } from "./tiers";
@@ -12,19 +13,8 @@ export async function createPaidGroup(
   tier: PaidTier,
   signedTransaction: unknown,
 ): Promise<Response> {
-  if (typeof signedTransaction !== "string") {
-    return new Response("Paid tiers need a signedTransaction", { status: 400 });
-  }
-  let transaction;
-  try {
-    transaction = await verifySignedTransaction(signedTransaction, {
-      rootCertB64: env.APPLE_ROOT_CA_G3,
-      bundleId: env.APPLE_BUNDLE_ID,
-    });
-  } catch (error) {
-    if (error instanceof InvalidTransaction) return new Response(`Invalid transaction: ${error.message}`, { status: 403 });
-    throw error;
-  }
+  const transaction = await verifyPurchase(env, signedTransaction);
+  if (transaction instanceof Response) return transaction;
   if (transaction.productId !== TIERS[tier].productId) {
     return new Response("Transaction is for a different tier", { status: 400 });
   }
@@ -47,12 +37,28 @@ export async function createPaidGroup(
         transaction.environment ?? null,
         new Date().toISOString(),
       ),
+      countGroupCreated(env.DB, row.id),
     ]);
   } catch (error) {
-    if (String(error).includes("UNIQUE constraint failed: orders.apple_transaction_id")) {
+    if (isReplayedTransaction(error)) {
       return new Response("Transaction already used", { status: 409 });
     }
     throw error;
   }
   return Response.json(toJson(row), { status: 201 });
+}
+
+/** The verified App Store transaction, or the 400/403 response to send instead. */
+export async function verifyPurchase(env: Env, signedTransaction: unknown): Promise<AppStoreTransaction | Response> {
+  if (typeof signedTransaction !== "string") return new Response("Purchases need a signedTransaction", { status: 400 });
+  try {
+    return await verifySignedTransaction(signedTransaction, { rootCertB64: env.APPLE_ROOT_CA_G3, bundleId: env.APPLE_BUNDLE_ID });
+  } catch (error) {
+    if (error instanceof InvalidTransaction) return new Response(`Invalid transaction: ${error.message}`, { status: 403 });
+    throw error;
+  }
+}
+
+export function isReplayedTransaction(error: unknown): boolean {
+  return String(error).includes("UNIQUE constraint failed: orders.apple_transaction_id");
 }

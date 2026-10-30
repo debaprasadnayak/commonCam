@@ -1,3 +1,4 @@
+import { countUpload } from "./analytics";
 import { parseFilterRecipe } from "./filterRecipe";
 import { isHostOrCoHost } from "./hostControls";
 import type { Env } from "./index";
@@ -174,6 +175,7 @@ async function confirmItem(request: Request, env: Env, groupId: string, deviceId
   await env.DB.batch([
     env.DB.prepare("UPDATE items SET status = 'ready', filter_recipe = ? WHERE id = ?").bind(recipe && JSON.stringify(recipe), item.id),
     ...flagIfSensitive(env, body.sensitive, groupId, item.id, deviceId),
+    countUpload(env.DB, groupId, item.bytes),
   ]);
   return Response.json(await itemJson(env, await findItem(env, item.id), new URL(request.url).origin, true), { status: 201 });
 }

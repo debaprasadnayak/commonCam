@@ -59,6 +59,12 @@ final class UploadCenter {
         if !items.isEmpty { confirmed.append(contentsOf: items) }
     }
 
+    /// Retries this phone's shots paused by a full group as soon as a fresh `storage` shows room (an upgrade or
+    /// add-on), instead of waiting for the next timed retry.
+    func resumeIfRoom(in groupID: String, storage: GroupStorage) async {
+        if uploads.shouldResume(in: groupID, storage: storage) { await send() }
+    }
+
     private func keepSending() async {
         while true {
             await send()
@@ -84,7 +90,7 @@ extension QueuedUpload {
         switch failure {
         case nil: nil
         case 410: "The group has ended"
-        case 413: "The group's storage stayed full"
+        case 413: "Not shared: storage stayed full for 24 h"
         case 404, 403: "You're no longer in this group"
         case let status?: "Not shared (error \(status))"
         }

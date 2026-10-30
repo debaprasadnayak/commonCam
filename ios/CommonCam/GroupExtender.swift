@@ -8,6 +8,7 @@ import SwiftUI
 @MainActor
 final class GroupExtender {
     typealias Extend = @MainActor (_ groupID: String, _ signedTransaction: String) async throws -> EventGroup
+    typealias Buy = TierPurchaser.Buy
 
     enum ExtensionError: Error {
         case productUnavailable
@@ -16,9 +17,15 @@ final class GroupExtender {
     }
 
     private let extend: Extend
+    private let buy: Buy
 
-    init(extend: @escaping Extend) {
+    init(extend: @escaping Extend, buy: @escaping Buy = { try await $0.purchase(options: $1) }) {
         self.extend = extend
+        self.buy = buy
+    }
+
+    convenience init(api: APIClient) {
+        self.init { try await api.extendGroup($0, signedTransaction: $1) }
     }
 
     func product() async throws -> Product? {
@@ -29,7 +36,7 @@ final class GroupExtender {
     func purchase(for groupID: String) async throws -> EventGroup? {
         guard let token = GroupExtension.appAccountToken(forGroup: groupID) else { throw ExtensionError.invalidGroup }
         guard let product = try await product() else { throw ExtensionError.productUnavailable }
-        switch try await product.purchase(options: [.appAccountToken(token)]) {
+        switch try await buy(product, [.appAccountToken(token)]) {
         case .success(let verification):
             return try await extendAndFinish(verification)
         case .userCancelled, .pending:
@@ -67,30 +74,24 @@ final class GroupExtender {
 }
 
 /// Shown to the host of an ended group: downloads until grace ends, and the paid extension.
+/// Once extended, the reopened group replaces `group`, so this section gives way to the active-group ones.
 struct GraceSection: View {
     let api: APIClient
-    let group: EventGroup
+    @Binding var group: EventGroup
 
     @State private var product: Product?
-    @State private var extended: EventGroup?
     @State private var errorMessage: String?
     @State private var isBuying = false
 
-    private var extender: GroupExtender {
-        GroupExtender { [api] groupID, signedTransaction in try await api.extendGroup(groupID, signedTransaction: signedTransaction) }
-    }
+    private var extender: GroupExtender { GroupExtender(api: api) }
 
     var body: some View {
         Section("Event ended") {
-            if let extended {
-                Text("Extended until \(extended.endsAt.formatted(date: .abbreviated, time: .shortened)). Pull to refresh your groups.")
-            } else {
-                if let graceEndsAt = group.graceEndsAt {
-                    Text("Read-only. Save what you want before \(graceEndsAt.formatted(date: .abbreviated, time: .shortened)); after that the photos and videos are deleted from our servers.")
-                }
-                Button("Extend \(product.map { "for \($0.displayPrice)" } ?? "")") { Task { await buy() } }
-                    .disabled(product == nil || isBuying)
+            if let graceEndsAt = group.graceEndsAt {
+                Text("Read-only. Save what you want before \(graceEndsAt.formatted(date: .abbreviated, time: .shortened)); after that the photos and videos are deleted from our servers.")
             }
+            Button("Extend 7 days \(product.map { "for \($0.displayPrice)" } ?? "")") { Task { await buy() } }
+                .disabled(product == nil || isBuying)
             if let errorMessage { Text(errorMessage).foregroundStyle(.red) }
         }
         .task { product = try? await extender.product() }
@@ -100,7 +101,7 @@ struct GraceSection: View {
         isBuying = true
         defer { isBuying = false }
         do {
-            if let group = try await extender.purchase(for: group.id) { extended = group }
+            if let extended = try await extender.purchase(for: group.id) { group = extended }
             errorMessage = nil
         } catch {
             errorMessage = "Couldn't extend: \(error.localizedDescription)"
