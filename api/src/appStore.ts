@@ -21,6 +21,8 @@ export interface AppStoreTransaction {
   price?: number;
   currency?: string;
   revocationDate?: number;
+  /** UUID the app set at purchase; upgrades and add-ons carry the group id here. */
+  appAccountToken?: string;
 }
 
 export interface AppStoreTrust {

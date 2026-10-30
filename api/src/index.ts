@@ -9,6 +9,7 @@ import { handleModeration } from "./moderation";
 import { handleMultipart, handleSignedParts } from "./multipart";
 import { createPaidGroup } from "./purchases";
 import { isPaidTier } from "./tiers";
+import { handleUpgrades } from "./upgrades";
 
 export interface Env {
   DB: D1Database;
@@ -75,6 +76,8 @@ export default {
     if (moderationResponse) return moderationResponse;
     const multipartResponse = await handleMultipart(request, url, env, deviceId);
     if (multipartResponse) return multipartResponse;
+    const upgradesResponse = await handleUpgrades(request, url, env, deviceId);
+    if (upgradesResponse) return upgradesResponse;
 
     return new Response("Not found", { status: 404 });
   },
