@@ -23,6 +23,8 @@ export interface Env {
   /** DER base64 of the root App Store transactions must chain to (Apple Root CA - G3). */
   APPLE_ROOT_CA_G3: string;
   APPLE_BUNDLE_ID: string;
+  /** App Store environment purchases must come from: "Sandbox" (dev Worker) or "Production" (launch). */
+  APP_STORE_ENV: string;
   /** Days a group stays read-only after its paid period before server media is deleted (wrangler `vars`). */
   GRACE_DAYS: string;
   /** APNs token auth (push.ts / apns.ts). Unset → pushes are skipped with a log line. APNS_PRIVATE_KEY is a secret (.p8 PEM). */

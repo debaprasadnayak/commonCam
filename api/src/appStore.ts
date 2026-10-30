@@ -2,13 +2,15 @@
 // the JWS must be ES256-signed by a leaf certificate that chains, via Apple's intermediate, to the
 // pinned Apple Root CA - G3. Mirrors what Apple's App Store Server Library does offline.
 //
-// shortcut: no OCSP/CRL revocation check of the chain; Apple's library does this online. Needs
-// outbound calls to Apple's OCSP responder and real Apple-signed transactions to test.
-// shortcut: only exercised with locally generated test certificates; never against a real
-// Sandbox/Production transaction (no App Store Connect account yet). The parser was checked by hand
-// against Apple's real Root CA - G3 and WWDR G6 intermediate.
-// shortcut: Xcode-environment transactions (local .storekit testing) are self-signed by Xcode and
-// are rejected; transaction `environment` (Sandbox vs Production) is recorded but not enforced.
+// The transaction's `environment` must match the Worker's APP_STORE_ENV (Sandbox on dev, Production at launch).
+//
+// shortcut: no OCSP/CRL revocation check of the chain, so a revoked Apple certificate is still trusted;
+// add Apple's online OCSP check before launch, once real Apple-signed transactions exist to test it.
+// shortcut: only exercised with locally generated test certificates (the parser was checked by hand
+// against Apple's real Root CA - G3 and WWDR G6 intermediate); test against real Sandbox transactions as
+// soon as there is an App Store Connect account.
+// shortcut: Xcode-environment transactions (local .storekit testing) are self-signed by Xcode and rejected,
+// so purchases can't be tried against a local Worker; add an opt-in Xcode root for local dev if that's needed.
 
 export class InvalidTransaction extends Error {}
 
@@ -29,6 +31,8 @@ export interface AppStoreTrust {
   /** DER of the trusted root, base64. */
   rootCertB64: string;
   bundleId: string;
+  /** "Sandbox" or "Production": the only App Store environment accepted. */
+  environment: string;
   now?: Date;
 }
 
@@ -81,6 +85,7 @@ export async function verifySignedTransaction(jws: string, trust: AppStoreTrust)
 
   const payload = parseJson(base64UrlDecode(payloadPart)) as AppStoreTransaction;
   if (payload.bundleId !== trust.bundleId) throw new InvalidTransaction("Transaction is for another app");
+  if (payload.environment !== trust.environment) throw new InvalidTransaction(`Not a ${trust.environment} transaction`);
   if (typeof payload.transactionId !== "string" || typeof payload.productId !== "string") {
     throw new InvalidTransaction("Transaction is missing ids");
   }

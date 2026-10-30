@@ -29,7 +29,8 @@ let cachedJwt: { cacheKey: string; jwt: string; issuedAt: number } | null = null
 
 /**
  * Token-based APNs (ES256 JWT signed with the .p8 key via Web Crypto), POST /3/device/<token> per push.
- * shortcut: not yet tried against Apple (no key); Workers' fetch negotiates HTTP/2, which APNs requires.
+ * shortcut: not yet tried against Apple (no .p8 key), so HTTP/2 negotiation and Apple's replies are untested;
+ * send a real push as soon as the APNS_* key is set up.
  */
 export function apnsSender(config: ApnsConfig, fetchFn: typeof fetch = fetch, now: () => number = Date.now): PushSender {
   const host = config.sandbox ? "api.sandbox.push.apple.com" : "api.push.apple.com";

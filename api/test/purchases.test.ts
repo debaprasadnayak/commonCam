@@ -115,6 +115,14 @@ describe("POST /groups with a paid tier", () => {
     expect(res.status).toBe(400);
   });
 
+  it("rejects a transaction from another App Store environment than this Worker's", async () => {
+    const token = `host-${crypto.randomUUID()}`;
+    const res = await buy("party", await signedByTestApple(transaction({ environment: "Production" })), token);
+
+    expect(res.status).toBe(403);
+    expect(await (await api("/groups", { token })).json()).toEqual([]);
+  });
+
   describe("rejects forged transactions", () => {
     it("signed by a chain that does not end in the trusted root", async () => {
       const forger = await createFakeAppStore();

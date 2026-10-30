@@ -5,8 +5,8 @@ import type { Env } from "./index";
 import { TIERS, type PaidTier } from "./tiers";
 
 /** Activates a paid group from a StoreKit 2 signed transaction and records the order. */
-// shortcut: the transaction is not bound to the buying device (StoreKit `appAccountToken`), so an
-// unused signed transaction leaked from one device could be redeemed by another, once.
+// shortcut: the transaction is not bound to the buying device (StoreKit `appAccountToken`), so an unused
+// signed transaction leaked from one device could be redeemed by another, once; bind it if leaks are seen.
 export async function createPaidGroup(
   env: Env,
   hostDeviceId: string,
@@ -52,7 +52,11 @@ export async function createPaidGroup(
 export async function verifyPurchase(env: Env, signedTransaction: unknown): Promise<AppStoreTransaction | Response> {
   if (typeof signedTransaction !== "string") return new Response("Purchases need a signedTransaction", { status: 400 });
   try {
-    return await verifySignedTransaction(signedTransaction, { rootCertB64: env.APPLE_ROOT_CA_G3, bundleId: env.APPLE_BUNDLE_ID });
+    return await verifySignedTransaction(signedTransaction, {
+      rootCertB64: env.APPLE_ROOT_CA_G3,
+      bundleId: env.APPLE_BUNDLE_ID,
+      environment: env.APP_STORE_ENV,
+    });
   } catch (error) {
     if (error instanceof InvalidTransaction) return new Response(`Invalid transaction: ${error.message}`, { status: 403 });
     throw error;
