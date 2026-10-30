@@ -1,3 +1,4 @@
+import { newMemberStatus } from "./approval";
 import { isHostOrCoHost, isJoiningPaused, joinRefusal } from "./hostControls";
 import { type Env, type GroupRow, toJson } from "./index";
 
@@ -8,16 +9,17 @@ const APPLE_APP_ID = "TEAMID0000.app.commoncam.CommonCam";
 const MAX_FAILURES = 10;
 const FAILURE_WINDOW_MS = 10 * 60 * 1000;
 
-interface MemberRow {
+export interface MemberRow {
   id: string;
   display_name: string;
   colour: string;
   role: string;
+  status: string;
   consent_accepted_at: string;
   joined_at: string;
 }
 
-const MEMBER_COLUMNS = "id, display_name, colour, role, consent_accepted_at, joined_at";
+export const MEMBER_COLUMNS = "id, display_name, colour, role, status, consent_accepted_at, joined_at";
 const GROUP_COLUMNS = "id, tier, state, people_cap, storage_cap_bytes, starts_at, ends_at";
 
 /** Routes reachable without a device token: what a phone without the app sees after scanning. */
@@ -98,11 +100,11 @@ async function join(request: Request, env: Env, deviceId: string): Promise<Respo
     return new Response("This group is no longer open", { status: 410 });
   }
 
-  const existing = await env.DB.prepare(`SELECT ${MEMBER_COLUMNS}, status FROM members WHERE group_id = ? AND device_id = ?`)
+  const existing = await env.DB.prepare(`SELECT ${MEMBER_COLUMNS} FROM members WHERE group_id = ? AND device_id = ?`)
     .bind(group.id, deviceId)
-    .first<MemberRow & { status: string }>();
+    .first<MemberRow>();
   if (existing && existing.status !== "removed" && existing.status !== "banned") {
-    return Response.json({ group: toJson(group), member: memberJson(existing) });
+    return joinResponse(group, existing, 200);
   }
   const refusal = await joinRefusal(env, group.id, existing?.status);
   if (refusal) return refusal;
@@ -120,6 +122,7 @@ async function join(request: Request, env: Env, deviceId: string): Promise<Respo
     display_name: displayName,
     colour: body.colour.toUpperCase(),
     role: "guest",
+    status: await newMemberStatus(env, group.id),
     consent_accepted_at: now,
     joined_at: now,
   };
@@ -127,20 +130,26 @@ async function join(request: Request, env: Env, deviceId: string): Promise<Respo
   // A removed member rejoining reuses their row (and id).
   const memberId = await env.DB.prepare(
     `INSERT INTO members (id, group_id, device_id, display_name, colour, role, status, consent_accepted_at, joined_at)
-     SELECT ?1, ?2, ?3, ?4, ?5, ?6, 'active', ?7, ?8
+     SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?10, ?7, ?8
      WHERE (SELECT COUNT(*) FROM members WHERE group_id = ?2 AND status = 'active') + 1 < ?9
      ON CONFLICT (group_id, device_id) DO UPDATE SET display_name = excluded.display_name, colour = excluded.colour,
-       role = excluded.role, status = 'active', consent_accepted_at = excluded.consent_accepted_at,
+       role = excluded.role, status = excluded.status, consent_accepted_at = excluded.consent_accepted_at,
        joined_at = excluded.joined_at
      WHERE members.status = 'removed'
      RETURNING id`,
   )
-    .bind(member.id, group.id, deviceId, member.display_name, member.colour, member.role, now, now, group.people_cap)
+    .bind(member.id, group.id, deviceId, member.display_name, member.colour, member.role, now, now, group.people_cap, member.status)
     .first<string>("id");
   if (!memberId) return new Response("This group is full", { status: 409 });
   member.id = memberId;
 
-  return Response.json({ group: toJson(group), member: memberJson(member) }, { status: 201 });
+  return joinResponse(group, member, 201);
+}
+
+// Pending guests get 202 until a host or co-host approves; rejected guests cannot ask again.
+function joinResponse(group: GroupRow, member: MemberRow, okStatus: number): Response {
+  if (member.status === "rejected") return new Response("The host declined your request", { status: 403 });
+  return Response.json({ group: toJson(group), member: memberJson(member) }, { status: member.status === "pending" ? 202 : okStatus });
 }
 
 async function isRateLimited(env: Env, keys: string[]): Promise<boolean> {
@@ -160,12 +169,13 @@ async function recordFailure(env: Env, keys: string[]): Promise<void> {
   await env.DB.batch(keys.map((key) => insert.bind(key, now)));
 }
 
-function memberJson(row: MemberRow) {
+export function memberJson(row: MemberRow) {
   return {
     id: row.id,
     displayName: row.display_name,
     colour: row.colour,
     role: row.role,
+    status: row.status,
     consentAcceptedAt: row.consent_accepted_at,
     joinedAt: row.joined_at,
   };

@@ -1,3 +1,4 @@
+import { handleApproval } from "./approval";
 import { handleHostControls } from "./hostControls";
 import { handleJoin, handlePublic } from "./join";
 import { TIERS } from "./tiers";
@@ -62,6 +63,9 @@ export default {
         .all<GroupRow>();
       return Response.json(results.map(toJson));
     }
+
+    const approvalResponse = await handleApproval(request, url, env, deviceId);
+    if (approvalResponse) return approvalResponse;
 
     const joinResponse = await handleJoin(request, url, env, deviceId);
     if (joinResponse) return joinResponse;

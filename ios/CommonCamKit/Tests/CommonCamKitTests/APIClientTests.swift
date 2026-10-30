@@ -45,12 +45,12 @@ private let tasterGroup = EventGroup(
 )
 
 private let memberJSON = """
-{"id":"m1","displayName":"Dancing Otter","colour":"#FF8800","role":"guest",
+{"id":"m1","displayName":"Dancing Otter","colour":"#FF8800","role":"guest","status":"active",
  "consentAcceptedAt":"2026-10-30T08:00:00.000Z","joinedAt":"2026-10-30T08:00:00.000Z"}
 """
 
 private let otter = Member(
-    id: "m1", displayName: "Dancing Otter", colour: "#FF8800", role: "guest",
+    id: "m1", displayName: "Dancing Otter", colour: "#FF8800", role: "guest", status: "active",
     consentAcceptedAt: Date(timeIntervalSince1970: 1_793_347_200), joinedAt: Date(timeIntervalSince1970: 1_793_347_200)
 )
 
@@ -178,6 +178,51 @@ private let otter = Member(
         let request = try #require(StubURLProtocol.requests.first)
         #expect(request.httpMethod == "POST")
         #expect(request.url?.absoluteString == "https://api.test/groups/g1/members/m1/\(path)")
+    }
+
+    @Test func reportsAJoinAwaitingApprovalAsPending() async throws {
+        StubURLProtocol.statusCode = 202
+        StubURLProtocol.responseBody = Data("""
+        {"group":\(groupJSON),"member":\(memberJSON.replacingOccurrences(of: #""active""#, with: #""pending""#))}
+        """.utf8)
+
+        let membership = try await client.join(qrToken: "tok", displayName: "Dancing Otter", colour: "#FF8800", consentAccepted: true)
+
+        #expect(membership.isPending)
+    }
+
+    @Test func readsAndSetsTheApprovalToggle() async throws {
+        StubURLProtocol.responseBody = Data(#"{"approvalRequired":true}"#.utf8)
+
+        #expect(try await client.setApprovalRequired(true, for: "g1") == true)
+        #expect(try await client.approvalRequired(for: "g1") == true)
+
+        let put = StubURLProtocol.requests[0]
+        #expect(put.httpMethod == "PUT")
+        #expect(put.url?.absoluteString == "https://api.test/groups/g1/approval")
+        #expect(put.httpBody == Data(#"{"approvalRequired":true}"#.utf8))
+        #expect(StubURLProtocol.requests[1].httpMethod == "GET")
+    }
+
+    @Test func listsPendingRequests() async throws {
+        StubURLProtocol.responseBody = Data("[\(memberJSON)]".utf8)
+
+        #expect(try await client.pendingMembers(of: "g1") == [otter])
+        #expect(StubURLProtocol.requests.first?.url?.absoluteString == "https://api.test/groups/g1/pending")
+    }
+
+    @Test func approvesAndRejectsRequests() async throws {
+        StubURLProtocol.responseBody = Data(memberJSON.utf8)
+        #expect(try await client.approve(memberID: "m1", in: "g1") == otter)
+
+        StubURLProtocol.statusCode = 204
+        StubURLProtocol.responseBody = Data()
+        try await client.reject(memberID: "m2", in: "g1")
+
+        #expect(StubURLProtocol.requests.map(\.httpMethod) == ["POST", "POST"])
+        #expect(StubURLProtocol.requests.map(\.url?.absoluteString) == [
+            "https://api.test/groups/g1/members/m1/approve", "https://api.test/groups/g1/members/m2/reject",
+        ])
     }
 
     @Test func failsOnAnErrorStatus() async throws {
