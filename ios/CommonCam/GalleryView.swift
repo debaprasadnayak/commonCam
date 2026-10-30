@@ -28,6 +28,7 @@ struct GalleryView: View {
             if let errorMessage {
                 Text(errorMessage).foregroundStyle(.red).padding()
             }
+            StorageNoticeBanner(groupID: group.id)
             if let saveProgress {
                 ProgressView("Saving to Photos…", value: Double(saveProgress.done), total: Double(max(saveProgress.total, 1)))
                     .padding()
@@ -110,6 +111,7 @@ struct GalleryView: View {
 
     private func reload() async {
         if let latest = try? await api.gallery(of: group.id) { items = latest }
+        if let storage = try? await api.storage(of: group.id) { await uploads.resumeIfRoom(in: group.id, storage: storage) }
     }
 
     private func saveAll() async {
@@ -269,7 +271,10 @@ private struct PendingTile: View {
             }
             .clipped()
             .overlay(alignment: .topTrailing) {
-                Label(upload.failureMessage ?? "Pending", systemImage: upload.isPending ? "clock.arrow.circlepath" : "exclamationmark.triangle.fill")
+                Label(
+                    upload.failureMessage ?? (upload.isWaitingForStorage ? "Waiting for space" : "Pending"),
+                    systemImage: upload.isPending ? "clock.arrow.circlepath" : "exclamationmark.triangle.fill"
+                )
                     .font(.caption2)
                     .foregroundStyle(upload.isPending ? Color.primary : Color.red)
                     .padding(4)

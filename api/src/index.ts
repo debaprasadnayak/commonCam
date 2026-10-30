@@ -10,6 +10,7 @@ import { handleModeration } from "./moderation";
 import { handleMultipart, handleSignedParts } from "./multipart";
 import { createPaidGroup } from "./purchases";
 import { isPaidTier } from "./tiers";
+import { handleStorageCap } from "./storageCap";
 import { handleUpgrades } from "./upgrades";
 
 export interface Env {
@@ -79,6 +80,8 @@ export default {
     if (multipartResponse) return multipartResponse;
     const upgradesResponse = await handleUpgrades(request, url, env, deviceId);
     if (upgradesResponse) return upgradesResponse;
+    const storageCapResponse = await handleStorageCap(request, url, env, deviceId);
+    if (storageCapResponse) return storageCapResponse;
 
     return new Response("Not found", { status: 404 });
   },
