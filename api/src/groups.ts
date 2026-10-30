@@ -36,15 +36,23 @@ export function insertGroup(db: D1Database, hostDeviceId: string, row: GroupRow)
   return db.prepare(`INSERT INTO groups (${COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`).bind(...values(hostDeviceId, row));
 }
 
-/** Inserts nothing (changes = 0) once the device has used up its free Tasters; atomic, so no race. */
+/**
+ * Inserts nothing (changes = 0) once the device has used up its free Tasters; atomic, so no race. A group
+ * started as a Taster if it has no tier purchase order, so upgraded Tasters still count.
+ */
 export function insertTasterGroup(db: D1Database, hostDeviceId: string, row: GroupRow): D1PreparedStatement {
   return db
     .prepare(
       `INSERT INTO groups (${COLUMNS}) SELECT ?, ?, ?, ?, ?, ?, ?, ?
-       WHERE (SELECT COUNT(*) FROM groups WHERE host_device_id = ? AND tier = 'taster') < ?`,
+       WHERE (SELECT COUNT(*) FROM groups g WHERE host_device_id = ? AND NOT EXISTS
+               (SELECT 1 FROM orders o WHERE o.group_id = g.id AND o.sku IN (${PAID_TIER_PRODUCT_IDS}))) < ?`,
     )
     .bind(...values(hostDeviceId, row), hostDeviceId, TASTER_LIMIT_PER_DEVICE);
 }
+
+const PAID_TIER_PRODUCT_IDS = Object.values(TIERS)
+  .flatMap((tier) => (tier.productId ? [`'${tier.productId}'`] : []))
+  .join(", ");
 
 const COLUMNS = "id, host_device_id, tier, people_cap, storage_cap_bytes, starts_at, ends_at, state";
 

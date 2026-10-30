@@ -97,6 +97,15 @@ describe("upgrade credit", () => {
     expect(await orderFor(tx.transactionId)).toMatchObject({ amount_milliunits: 4990, credit_applied: 0 });
   });
 
+  it("still counts an upgraded Taster against the device's free Taster limit", async () => {
+    const { host, group } = await tasterGroup();
+    expect((await purchase(host, group.id, await forGroup(group.id, "app.commoncam.upgrade.taster.pocket", 4990))).status).toBe(200);
+
+    const second = await api("/groups", { method: "POST", token: host, body: JSON.stringify({ tier: "taster" }) });
+
+    expect(second.status).toBe(403);
+  });
+
   it("credits everything already paid towards the tier, but not add-ons", async () => {
     const { host, group } = await paidGroup("pocket");
     await purchase(host, group.id, await forGroup(group.id, "app.commoncam.upgrade.pocket.party", 5000));
