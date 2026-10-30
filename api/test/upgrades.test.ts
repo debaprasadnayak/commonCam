@@ -109,6 +109,21 @@ describe("upgrade credit", () => {
     expect((await orderFor(tx.transactionId)).credit_applied).toBe(9990);
   });
 
+  it("does not credit a paid extension towards the tier", async () => {
+    const { host, group } = await paidGroup("pocket");
+    await env.DB.prepare("UPDATE groups SET ends_at = ? WHERE id = ?").bind(new Date(Date.now() - 1000).toISOString(), group.id).run();
+    const extend = await api(`/groups/${group.id}/extend`, {
+      method: "POST",
+      token: host,
+      body: JSON.stringify({ signedTransaction: await forGroup(group.id, "app.commoncam.extension", 2990) }),
+    });
+    expect(extend.status).toBe(200);
+    const tx = transaction({ productId: "app.commoncam.upgrade.pocket.party", price: 5000, appAccountToken: group.id });
+
+    expect((await purchase(host, group.id, await signed(tx))).status).toBe(200);
+    expect((await orderFor(tx.transactionId)).credit_applied).toBe(4990);
+  });
+
   it("keeps earlier add-ons on top of the new tier's limits", async () => {
     const { host, group } = await paidGroup("party");
     await purchase(host, group.id, await forGroup(group.id, "app.commoncam.addon.people", 1990));

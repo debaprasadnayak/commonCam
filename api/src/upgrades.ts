@@ -5,9 +5,7 @@ import type { Env } from "./index";
 import { isOpen } from "./media";
 import { isReplayedTransaction, verifyPurchase } from "./purchases";
 import { syncStorageWarnings } from "./push";
-import { addOnForProductId, parseUpgradeProductId, upgradeIncrease, type LimitIncrease, type Tier } from "./tiers";
-
-const ADD_ON_SKU_PREFIX = "app.commoncam.addon.";
+import { addOnForProductId, parseUpgradeProductId, TIER_CREDIT_PRODUCT_IDS, upgradeIncrease, type LimitIncrease, type Tier } from "./tiers";
 
 // POST /groups/:id/purchases {signedTransaction}: applies a mid-event upgrade or add-on (host or co-host).
 export async function handleUpgrades(request: Request, url: URL, env: Env, deviceId: string): Promise<Response | null> {
@@ -71,7 +69,8 @@ export async function applyPurchase(
 /**
  * Inserts the order if the group is Active on `expectedTier` (Grace/Deleted groups take no purchases;
  * #18's extension reopens the group earlier in the same batch). With `withCredit` (upgrades), `credit_applied`
- * is what was already paid towards the group's tier: the tier purchase plus earlier upgrades, not add-ons.
+ * is what was already paid towards the group's tier (TIER_CREDIT_PRODUCT_IDS): the tier purchase plus earlier
+ * upgrades, not add-ons or extensions.
  */
 export function recordOrder(
   db: D1Database,
@@ -85,7 +84,7 @@ export function recordOrder(
       `INSERT INTO orders (id, group_id, apple_transaction_id, sku, amount_milliunits, currency, credit_applied, environment, created_at)
        SELECT ?1, ?2, ?3, ?4, ?5, ?6,
               CASE WHEN ?7 THEN (SELECT COALESCE(SUM(amount_milliunits), 0) FROM orders
-                                 WHERE group_id = ?2 AND sku NOT LIKE '${ADD_ON_SKU_PREFIX}%') ELSE 0 END,
+                                 WHERE group_id = ?2 AND sku IN (${TIER_CREDIT_PRODUCT_IDS.map((id) => `'${id}'`).join(", ")})) ELSE 0 END,
               ?8, ?9
        WHERE EXISTS (SELECT 1 FROM groups WHERE id = ?2 AND tier = ?10 AND state = 'Active')`,
     )
