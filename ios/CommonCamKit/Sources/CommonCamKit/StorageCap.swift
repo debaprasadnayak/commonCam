@@ -1,39 +1,27 @@
 import Foundation
 
-/// How full a group's storage is (SPEC.md section 8). Mirrors `storageLevel` in the Worker's `storageCap.ts`.
+/// How full a group's storage is (SPEC.md section 8). Decided by the Worker (`storageCap.ts`) and sent as
+/// `storageLevel`; the app never recomputes it from the bytes.
 public enum StorageLevel: String, Codable, Sendable {
     case ok, nearlyFull, full
-
-    /// The host is warned from this share of the cap; at 100% uploads pause.
-    public static let warningFraction = 0.8
-
-    public init(usedBytes: Int64, capBytes: Int64) {
-        if usedBytes >= capBytes {
-            self = .full
-        } else if Double(usedBytes) >= Double(capBytes) * Self.warningFraction {
-            self = .nearlyFull
-        } else {
-            self = .ok
-        }
-    }
 }
 
 /// A group's storage usage, from `GET /groups/:id/storage` (any active member) or the host's group JSON.
 public struct GroupStorage: Codable, Equatable, Sendable {
     public let usedBytes: Int64
     public let capBytes: Int64
+    public let level: StorageLevel
 
-    public init(usedBytes: Int64, capBytes: Int64) {
+    public init(usedBytes: Int64, capBytes: Int64, level: StorageLevel) {
         self.usedBytes = usedBytes
         self.capBytes = capBytes
+        self.level = level
     }
-
-    public var level: StorageLevel { StorageLevel(usedBytes: usedBytes, capBytes: capBytes) }
 
     /// Share of the cap in use, 0…1 (for a progress bar).
     public var fractionUsed: Double { capBytes > 0 ? min(1, Double(usedBytes) / Double(capBytes)) : 1 }
 
-    /// What the host and co-hosts are told at 80% and 100%; nil below 80%.
+    /// What the host and co-hosts are told when nearly full or full; nil otherwise.
     public var hostWarning: String? {
         switch level {
         case .ok:
@@ -49,11 +37,12 @@ public struct GroupStorage: Codable, Equatable, Sendable {
     enum CodingKeys: String, CodingKey {
         case usedBytes = "storageUsedBytes"
         case capBytes = "storageCapBytes"
+        case level = "storageLevel"
     }
 }
 
 extension EventGroup {
-    public var storage: GroupStorage { GroupStorage(usedBytes: storageUsedBytes, capBytes: storageCapBytes) }
+    public var storage: GroupStorage { GroupStorage(usedBytes: storageUsedBytes, capBytes: storageCapBytes, level: storageLevel) }
 }
 
 extension APIClient {
