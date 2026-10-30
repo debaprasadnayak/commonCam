@@ -104,6 +104,7 @@ struct ContentView: View {
     private func loadGroups() async {
         // Purchases whose activation failed earlier (offline, Ask to Buy) are activated here.
         _ = await purchaser.activateUnfinished()
+        _ = await GroupPurchaser(api: api).applyUnfinished()
         do {
             products = try await purchaser.products()
             groups = try await api.myGroups()
