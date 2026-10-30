@@ -1,0 +1,20 @@
+{
+  "name": "commoncam-api",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-10-01",
+  "d1_databases": [
+    {
+      "binding": "DB",
+      // Placeholder until the Cloudflare provisioning ticket creates the real database.
+      "database_name": "commoncam",
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "MEDIA",
+      "bucket_name": "commoncam-media"
+    }
+  ]
+}
