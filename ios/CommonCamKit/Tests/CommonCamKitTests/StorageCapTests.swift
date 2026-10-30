@@ -2,36 +2,14 @@ import Foundation
 import Testing
 @testable import CommonCamKit
 
-private let gigabyte: Int64 = 1024 * 1024 * 1024
-
 struct StorageCapTests {
-    @Test func levelWarnsFrom80PercentAndIsFullFrom100() {
-        #expect(StorageLevel(usedBytes: 0, capBytes: 100) == .ok)
-        #expect(StorageLevel(usedBytes: 79, capBytes: 100) == .ok)
-        #expect(StorageLevel(usedBytes: 80, capBytes: 100) == .nearlyFull)
-        #expect(StorageLevel(usedBytes: 99, capBytes: 100) == .nearlyFull)
-        #expect(StorageLevel(usedBytes: 100, capBytes: 100) == .full)
-        #expect(StorageLevel(usedBytes: 130, capBytes: 100) == .full)
-        #expect(StorageLevel(usedBytes: 0, capBytes: 0) == .full)
-    }
+    @Test func theHostIsWarnedWhenNearlyFullAndToldUploadsPauseWhenFull() throws {
+        #expect(GroupStorage(usedBytes: 50, capBytes: 100, level: .ok).hostWarning == nil)
 
-    @Test func aGroupKnowsItsLevelFromItsUsageAndCap() {
-        let group = EventGroup(
-            id: "g1", tier: "taster", state: "Active", peopleCap: 4, storageCapBytes: gigabyte,
-            storageUsedBytes: gigabyte * 9 / 10, startsAt: .now, endsAt: .now
-        )
-
-        #expect(group.storage == GroupStorage(usedBytes: gigabyte * 9 / 10, capBytes: gigabyte))
-        #expect(group.storage.level == .nearlyFull)
-    }
-
-    @Test func theHostIsWarnedAt80PercentAndToldUploadsPauseAt100() throws {
-        #expect(GroupStorage(usedBytes: 50, capBytes: 100).hostWarning == nil)
-
-        let nearlyFull = try #require(GroupStorage(usedBytes: 857, capBytes: 1000).hostWarning)
+        let nearlyFull = try #require(GroupStorage(usedBytes: 857, capBytes: 1000, level: .nearlyFull).hostWarning)
         #expect(nearlyFull.contains("85% full"))
 
-        let full = try #require(GroupStorage(usedBytes: 1000, capBytes: 1000).hostWarning)
+        let full = try #require(GroupStorage(usedBytes: 1000, capBytes: 1000, level: .full).hostWarning)
         #expect(full.contains("Uploads are paused"))
         #expect(full.contains("24 hours"))
     }
@@ -50,9 +28,9 @@ struct StorageQueueStateTests {
     @Test func queuedShotsResumeOnlyOnceTheirGroupHasRoomAgain() {
         let queue = [upload(storageFullSince: .now), upload(group: "g2")]
 
-        #expect(!queue.shouldResume(in: "g1", storage: GroupStorage(usedBytes: 100, capBytes: 100)))
-        #expect(queue.shouldResume(in: "g1", storage: GroupStorage(usedBytes: 100, capBytes: 200)))
-        #expect(!queue.shouldResume(in: "g2", storage: GroupStorage(usedBytes: 100, capBytes: 200)))
+        #expect(!queue.shouldResume(in: "g1", storage: GroupStorage(usedBytes: 100, capBytes: 200, level: .full)))
+        #expect(queue.shouldResume(in: "g1", storage: GroupStorage(usedBytes: 100, capBytes: 100, level: .nearlyFull)))
+        #expect(!queue.shouldResume(in: "g2", storage: GroupStorage(usedBytes: 100, capBytes: 200, level: .ok)))
     }
 
     @Test func theGuestIsToldShotsAreWaitingForSpace() throws {
@@ -75,14 +53,26 @@ struct StorageQueueStateTests {
 }
 
 extension APIClientTests {
+    @Test func aGroupsStorageLevelComesFromTheAPI() async throws {
+        StubURLProtocol.statusCode = 200
+        StubURLProtocol.responseBody = Data(#"""
+        [{"id":"g1","tier":"taster","state":"Active","peopleCap":4,"storageCapBytes":1000,"storageUsedBytes":10,
+          "storageLevel":"full","startsAt":"2026-10-30T08:00:00.000Z","endsAt":"2026-10-31T08:00:00.000Z"}]
+        """#.utf8)
+
+        let group = try #require(try await client.myGroups().first)
+
+        // The Worker decides the level; the app never recomputes it from the bytes.
+        #expect(group.storage == GroupStorage(usedBytes: 10, capBytes: 1000, level: .full))
+    }
+
     @Test func fetchesAGroupsStorageForGuests() async throws {
         StubURLProtocol.statusCode = 200
         StubURLProtocol.responseBody = Data(#"{"storageUsedBytes":1000,"storageCapBytes":1000,"storageLevel":"full"}"#.utf8)
 
         let storage = try await client.storage(of: "g1")
 
-        #expect(storage == GroupStorage(usedBytes: 1000, capBytes: 1000))
-        #expect(storage.level == .full)
+        #expect(storage == GroupStorage(usedBytes: 1000, capBytes: 1000, level: .full))
         #expect(StubURLProtocol.requests.first?.url?.absoluteString == "https://api.test/groups/g1/storage")
     }
 }

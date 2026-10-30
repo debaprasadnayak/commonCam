@@ -76,6 +76,8 @@ struct ContentView: View {
             }
             .navigationTitle("commonCam")
             .task { await loadGroups() }
+            // Lives as long as the root view: Ask to Buy approvals etc. are activated while the app runs.
+            .task { await purchases.processUpdates { _ in await loadGroups() } }
             .refreshable { await loadGroups() }
             .onOpenURL { url in
                 if let token = JoinLink.qrToken(from: url) { joinRequest = JoinRequest(qrToken: token) }
@@ -101,10 +103,13 @@ struct ContentView: View {
         }
     }
 
+    private var purchases: PurchaseRouter {
+        PurchaseRouter(handlers: [purchaser.handle, GroupPurchaser(api: api).handle])
+    }
+
     private func loadGroups() async {
-        // Purchases whose activation failed earlier (offline, Ask to Buy) are activated here.
-        _ = await purchaser.activateUnfinished()
-        _ = await GroupPurchaser(api: api).applyUnfinished()
+        // Purchases whose activation failed earlier (e.g. offline) are activated here.
+        _ = await purchases.processUnfinished()
         do {
             products = try await purchaser.products()
             groups = try await api.myGroups()
