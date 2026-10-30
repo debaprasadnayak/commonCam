@@ -28,6 +28,10 @@ final class Camera: NSObject, @unchecked Sendable {
     private let queue = DispatchQueue(label: "commonCam.camera")
     private var format: PhotoFormat = .jpeg
     private var pending: CheckedContinuation<CapturedPhoto, Error>?
+    /// Video mode (#5): microphone samples arrive on `framesQueue` too, next to the frames they go with.
+    private let audio = AVCaptureAudioDataOutput()
+    private var microphone: AVCaptureDeviceInput?
+    let recorder = VideoRecorder()
 
     func start() async throws {
         guard Self.backCamera() != nil else { throw Failure.noCamera }
@@ -47,7 +51,53 @@ final class Camera: NSObject, @unchecked Sendable {
     }
 
     func stop() {
+        stopRecording()
         queue.async { [self] in session.stopRunning() }
+    }
+
+    /// Video mode records 1080p-class HEVC with sound (if the microphone is allowed); photo mode drops the
+    /// microphone again and goes back to full-resolution stills.
+    func setVideoMode(_ isVideo: Bool) async {
+        let withSound = isVideo ? await AVCaptureDevice.requestAccess(for: .audio) : false
+        await withCheckedContinuation { (done: CheckedContinuation<Void, Never>) in
+            queue.async { [self] in
+                session.beginConfiguration()
+                session.sessionPreset = isVideo ? .high : .photo
+                if withSound, microphone == nil, let device = AVCaptureDevice.default(for: .audio),
+                   let input = try? AVCaptureDeviceInput(device: device), session.canAddInput(input), session.canAddOutput(audio) {
+                    session.addInput(input)
+                    session.addOutput(audio)
+                    audio.setSampleBufferDelegate(self, queue: framesQueue)
+                    microphone = input
+                } else if !isVideo, let microphone {
+                    session.removeInput(microphone)
+                    session.removeOutput(audio)
+                    self.microphone = nil
+                }
+                session.commitConfiguration()
+                done.resume()
+            }
+        }
+    }
+
+    /// Records until `stopRecording()` or the 60 s cap; `progress` gets the seconds left in the clip.
+    func record(progress: @escaping @Sendable (TimeInterval) -> Void) async throws -> CapturedVideo {
+        let file = FileManager.default.temporaryDirectory.appending(path: "\(UUID().uuidString).\(CapturedVideo.fileExtension)")
+        return try await withCheckedThrowingContinuation { continuation in
+            framesQueue.async { [self] in
+                recorder.start(
+                    file: file,
+                    videoSettings: frames.recommendedVideoSettings(forVideoCodecType: .hevc, assetWriterOutputFileType: .mov),
+                    audioSettings: microphone == nil ? nil : audio.recommendedAudioSettingsForAssetWriter(writingTo: .mov),
+                    progress: progress,
+                    completion: { continuation.resume(with: $0) }
+                )
+            }
+        }
+    }
+
+    func stopRecording() {
+        framesQueue.async { [self] in recorder.stop() }
     }
 
     func capture() async throws -> CapturedPhoto {
@@ -89,6 +139,8 @@ final class Camera: NSObject, @unchecked Sendable {
             guard let self else { return }
             let angle = coordinator.videoRotationAngleForHorizonLevelPreview
             queue.async { [self] in
+                // A clip keeps the orientation it started in (#5).
+                guard !recorder.isRecording else { return }
                 guard let connection = frames.connection(with: .video), connection.isVideoRotationAngleSupported(angle) else { return }
                 connection.videoRotationAngle = angle
             }
@@ -122,21 +174,28 @@ extension Camera: AVCapturePhotoCaptureDelegate {
 
 extension Camera: AVCaptureVideoDataOutputSampleBufferDelegate {
     func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
+        if output === audio { return recorder.appendAudio(sampleBuffer) }
         guard let pixels = sampleBuffer.imageBuffer else { return }
         latestFrame.set(CIImage(cvPixelBuffer: pixels))
+        recorder.appendVideo(sampleBuffer)
     }
 }
+
+extension Camera: AVCaptureAudioDataOutputSampleBufferDelegate {}
 
 /// Full-screen viewfinder with a shutter. Hands each original to `onCapture`; explains when there is no camera
 /// (e.g. the Simulator) instead of failing silently.
 struct CameraScreen: View {
     let onCapture: (CapturedPhoto) -> Void
+    var onRecord: (CapturedVideo) -> Void = { _ in }
     @Environment(\.dismiss) private var dismiss
     @State private var camera = Camera()
     @State private var filter: FilterDefinition?
     @State private var problem: String?
     @State private var isReady = false
     @State private var isCapturing = false
+    @State private var isVideo = false
+    @State private var isRecording = false
 
     var body: some View {
         ZStack {
@@ -145,15 +204,23 @@ struct CameraScreen: View {
                 ContentUnavailableView("Camera unavailable", systemImage: "camera.fill", description: Text(problem))
                     .foregroundStyle(.white)
             } else {
-                FilteredPreview(frames: camera.latestFrame, recipe: filter?.recipe()).ignoresSafeArea()
+                // Video filters (baked in) come with #8; until then clips are recorded and previewed unfiltered.
+                FilteredPreview(frames: camera.latestFrame, recipe: isVideo ? nil : filter?.recipe()).ignoresSafeArea()
             }
             VStack {
                 HStack {
                     Spacer()
-                    Button("Done") { dismiss() }.buttonStyle(.borderedProminent).padding()
+                    Button("Done") { dismiss() }.buttonStyle(.borderedProminent).padding().disabled(isRecording)
                 }
                 Spacer()
                 if problem == nil {
+                    CaptureModePicker(isVideo: $isVideo).disabled(!isReady || isRecording)
+                }
+                if problem == nil && isVideo {
+                    VideoShutter(camera: camera, isRecording: $isRecording, onRecord: onRecord) { problem = $0 }
+                        .disabled(!isReady)
+                        .padding(.bottom, 30)
+                } else if problem == nil {
                     FilterPicker(selection: $filter)
                     Button {
                         Task { await shoot() }
@@ -175,6 +242,7 @@ struct CameraScreen: View {
                 problem = error.localizedDescription
             }
         }
+        .onChange(of: isVideo) { Task { await camera.setVideoMode(isVideo) } }
         .onDisappear { camera.stop() }
     }
 

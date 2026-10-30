@@ -5,7 +5,8 @@ import { VISIBLE_TO_VIEWER } from "./moderation";
 
 const UPLOAD_URL_TTL_S = 15 * 60;
 const DOWNLOAD_URL_TTL_S = 15 * 60;
-const CONTENT_TYPES: Record<string, "photo"> = { "image/heic": "photo", "image/jpeg": "photo" };
+// HEVC clips come from the camera as QuickTime movies (#5).
+const CONTENT_TYPES: Record<string, "photo" | "video"> = { "image/heic": "photo", "image/jpeg": "photo", "video/quicktime": "video" };
 // The host has no members row, so their items are labelled like this in the gallery.
 const HOST_CONTRIBUTOR = { displayName: "Host", colour: "#8E8E93" };
 
@@ -50,10 +51,16 @@ export async function handleSignedMedia(request: Request, url: URL, env: Env): P
   }
 
   if (method === "GET") {
-    const object = await env.MEDIA.get(key);
+    // Byte ranges let AVPlayer stream and seek video clips.
+    const object = await env.MEDIA.get(key, { range: request.headers });
     if (!object) return new Response("Not found", { status: 404 });
-    const headers = new Headers({ "Cache-Control": "private, max-age=300" });
+    const headers = new Headers({ "Cache-Control": "private, max-age=300", "Accept-Ranges": "bytes" });
     object.writeHttpMetadata(headers);
+    const range = object.range as { offset?: number; length?: number } | undefined;
+    if (request.headers.has("Range") && range && range.offset !== undefined && range.length !== undefined) {
+      headers.set("Content-Range", `bytes ${range.offset}-${range.offset + range.length - 1}/${object.size}`);
+      return new Response(object.body, { status: 206, headers });
+    }
     return new Response(object.body, { headers });
   }
 
@@ -75,7 +82,7 @@ export async function handleMedia(request: Request, url: URL, env: Env, deviceId
 }
 
 async function requestUpload(request: Request, url: URL, env: Env, groupId: string, deviceId: string) {
-  const item = await createPendingItem(request, env, groupId, deviceId);
+  const item = await createPendingItem(request, env, groupId, deviceId, { allowVideo: false });
   if (item instanceof Response) return item;
   const exp = String(Math.floor(Date.now() / 1000) + UPLOAD_URL_TTL_S);
   const uploadUrl = await signedUrl(env, url.origin, "PUT", item.objectKey, exp, String(item.bytes), item.contentType);
@@ -89,12 +96,16 @@ export interface PendingItem {
   contentType: string;
 }
 
-/** Validates an upload request body ({bytes, contentType}) for the caller and records a 'pending' item. */
+/**
+ * Validates an upload request body ({bytes, contentType}) for the caller and records a 'pending' item.
+ * Video is only accepted where `allowVideo` (the resumable multipart upload): clips are too big for one PUT.
+ */
 export async function createPendingItem(
   request: Request,
   env: Env,
   groupId: string,
   deviceId: string,
+  { allowVideo = true } = {},
 ): Promise<PendingItem | Response> {
   const caller = await findCaller(env, groupId, deviceId);
   if (!caller) return new Response("Not found", { status: 404 });
@@ -107,6 +118,7 @@ export async function createPendingItem(
     return new Response("Invalid size", { status: 400 });
   }
   if (!CONTENT_TYPES[contentType]) return new Response("Unsupported content type", { status: 400 });
+  if (CONTENT_TYPES[contentType] === "video" && !allowVideo) return new Response("Video must use the multipart upload", { status: 400 });
   if (caller.group.storage_used_bytes + bytes > caller.group.storage_cap_bytes) {
     return new Response("This group's storage is full", { status: 413 });
   }
@@ -130,12 +142,13 @@ async function confirmItem(request: Request, env: Env, groupId: string, deviceId
   if (recipe === undefined) return new Response("Invalid filter recipe", { status: 400 });
   const item = typeof body.itemId === "string"
     ? await env.DB.prepare(
-        "SELECT id, bytes, object_key, status FROM items WHERE id = ? AND group_id = ? AND contributor_device_id = ?",
+        "SELECT id, type, bytes, object_key, status FROM items WHERE id = ? AND group_id = ? AND contributor_device_id = ?",
       )
         .bind(body.itemId, groupId, deviceId)
-        .first<{ id: string; bytes: number; object_key: string; status: string }>()
+        .first<{ id: string; type: string; bytes: number; object_key: string; status: string }>()
     : null;
   if (!item) return new Response("Unknown item", { status: 404 });
+  if (item.type === "video" && recipe) return new Response("Video filters are baked in; no recipe", { status: 400 });
   if (item.status === "ready") return Response.json(await itemJson(env, await findItem(env, item.id), new URL(request.url).origin, true));
   if (!isOpen(caller.group)) return new Response("This group is no longer open", { status: 410 });
 

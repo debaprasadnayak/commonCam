@@ -5,7 +5,9 @@
 	<key>APIBaseURL</key>
 	<string>http://localhost:8787</string>
 	<key>NSCameraUsageDescription</key>
-	<string>commonCam uses the camera to scan a group's QR code and to take photos for the shared gallery.</string>
+	<string>commonCam uses the camera to scan a group's QR code and to take photos and videos for the shared gallery.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>commonCam records sound with the videos you take for the shared gallery.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
 	<string>commonCam saves the photos you take, and any shared photos you choose (original or filtered), to your Photos library.</string>
 	<key>NSAppTransportSecurity</key>

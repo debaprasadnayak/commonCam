@@ -35,6 +35,16 @@ final class UploadCenter {
         }
     }
 
+    func enqueue(_ clip: CapturedVideo, in groupID: String) async {
+        do {
+            try await queue.enqueue(clip, in: groupID)
+            problem = nil
+            await send()
+        } catch {
+            problem = "Couldn't save the video: \(error.localizedDescription)"
+        }
+    }
+
     func remove(_ upload: QueuedUpload) async {
         await queue.remove(upload.id)
     }

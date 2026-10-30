@@ -53,15 +53,17 @@ struct GalleryView: View {
                 }
                 ForEach(items.contributed(by: shownContributor)) { item in
                     NavigationLink {
-                        ItemDetailView(item: item)
+                        if item.isVideo { VideoDetailView(item: item) } else { ItemDetailView(item: item) }
                     } label: {
                         GalleryTile(item: item, isTopContributor: stats.top.map { $0.memberId == item.contributor.memberId } ?? false)
                     }
                     .contextMenu {
-                        Button("Save to Photos", systemImage: "square.and.arrow.down") {
-                            Task { await save([item]) }
+                        if !item.isVideo { // clips are saved from their player (VideoDetailView)
+                            Button("Save to Photos", systemImage: "square.and.arrow.down") {
+                                Task { await save([item]) }
+                            }
+                            .disabled(saveProgress != nil)
                         }
-                        .disabled(saveProgress != nil)
                         if item.canDelete {
                             Button("Delete", systemImage: "trash", role: .destructive) { pendingDelete = item }
                         }
@@ -82,7 +84,7 @@ struct GalleryView: View {
             Button("Take photo", systemImage: "camera") { isCameraOpen = true }
         }
         .fullScreenCover(isPresented: $isCameraOpen) {
-            CameraScreen { photo in Task { await share(photo) } }
+            CameraScreen(onCapture: { photo in Task { await share(photo) } }, onRecord: { clip in Task { await share(clip) } })
         }
         .task {
             // Re-listing also renews the short-lived download URLs.
@@ -112,7 +114,7 @@ struct GalleryView: View {
 
     private func saveAll() async {
         await reload() // fresh download URLs: they expire after 15 minutes
-        await save(items)
+        await save(items.filter { !$0.isVideo })
     }
 
     private func save(_ toSave: [GalleryItem]) async {
@@ -149,6 +151,13 @@ struct GalleryView: View {
             saveNotice = PhotosAccessMessage.denied
         }
         await uploads.enqueue(photo, in: group.id)
+    }
+
+    private func share(_ clip: CapturedVideo) async {
+        if await VideoSaver.autoSave(clip, enabled: AutoSaveSetting().isEnabled) == .accessDenied {
+            saveNotice = PhotosAccessMessage.denied
+        }
+        await uploads.enqueue(clip, in: group.id)
     }
 }
 
@@ -201,7 +210,7 @@ private struct GalleryTile: View {
         Color.secondary.opacity(0.15)
             .aspectRatio(1, contentMode: .fit)
             .overlay {
-                FilteredThumbnail(item: item)
+                if item.isVideo { VideoThumbnail(url: item.downloadUrl) } else { FilteredThumbnail(item: item) }
             }
             .clipped()
             .overlay(alignment: .topTrailing) {
@@ -230,7 +239,7 @@ private struct GalleryTile: View {
                 .padding(4)
             }
             .accessibilityElement(children: .combine)
-            .accessibilityLabel("Photo by \(item.contributor.displayName)\(item.isHidden ? ", reported, hidden from guests" : "")")
+            .accessibilityLabel("\(item.isVideo ? "Video" : "Photo") by \(item.contributor.displayName)\(item.isHidden ? ", reported, hidden from guests" : "")")
     }
 }
 
@@ -244,12 +253,14 @@ private struct PendingTile: View {
         Color.secondary.opacity(0.15)
             .aspectRatio(1, contentMode: .fit)
             .overlay {
-                if let thumbnail {
+                if upload.isVideo {
+                    VideoThumbnail(url: file, opacity: 0.6)
+                } else if let thumbnail {
                     Image(uiImage: thumbnail).resizable().scaledToFill().opacity(0.6)
                 }
             }
             .task(id: file) {
-                guard let image = UIImage(contentsOfFile: file.path()) else { return }
+                guard !upload.isVideo, let image = UIImage(contentsOfFile: file.path()) else { return }
                 let scale = 300 / max(image.size.width, image.size.height, 1)
                 thumbnail = await image.byPreparingThumbnail(ofSize: CGSize(width: image.size.width * scale, height: image.size.height * scale))
             }
