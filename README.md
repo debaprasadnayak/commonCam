@@ -26,7 +26,7 @@ cd ios && xcodebuild test -project CommonCam.xcodeproj -scheme CommonCam \
   -destination 'platform=iOS Simulator,name=iPhone 18 Pro'
 ```
 
-The app talks to `http://localhost:8787` (set by `APIBaseURL` in `ios/CommonCam-Info.plist`), so run `npm run dev` before launching it in the simulator.
+The app talks to the dev Worker at `https://commoncam-api-dev.dev094u.workers.dev`. The address comes from the `API_BASE_URL` build setting, which `APIBaseURL` in `ios/CommonCam-Info.plist` reads. To use a local Worker, run `npm run dev` and override the setting, for example by adding `API_BASE_URL=http://localhost:8787` to the `xcodebuild` command.
 
 ## Purchases (paid tiers)
 
@@ -36,7 +36,7 @@ The app talks to `http://localhost:8787` (set by `APIBaseURL` in `ios/CommonCam-
 
 ## Cloudflare dev deployment
 
-The `deploy-dev` GitHub Actions job deploys the API to `commoncam-api-dev` on pushes to `main` (or a manual run of the CI workflow), after both test jobs pass, applying any new D1 migrations to the remote `commoncam` database first. Configure these repository Actions secrets before merging or pushing the workflow to `main`:
+The `deploy-dev` GitHub Actions job deploys the API to `commoncam-api-dev` on pushes to `main` (or a manual run of the CI workflow), after the Worker API tests pass, applying any new D1 migrations to the remote `commoncam` database first. Configure these repository Actions secrets before merging or pushing the workflow to `main`:
 
 - `CLOUDFLARE_API_TOKEN`: a token with Workers Scripts:Edit and D1:Edit on this account (the job applies D1 migrations before deploying).
 - `CLOUDFLARE_ACCOUNT_ID`: the Cloudflare account ID.
