@@ -11,6 +11,8 @@ export interface GroupRow {
   storage_used_bytes: number;
   starts_at: string;
   ends_at: string;
+  /** Set when the group enters Grace (lifecycle.ts); null while Active. */
+  grace_ends_at?: string | null;
 }
 
 /** A new Active group starting now, with the tier's limits. */
@@ -59,5 +61,6 @@ export function toJson(row: GroupRow) {
     storageUsedBytes: row.storage_used_bytes,
     startsAt: row.starts_at,
     endsAt: row.ends_at,
+    graceEndsAt: row.grace_ends_at ?? null,
   };
 }

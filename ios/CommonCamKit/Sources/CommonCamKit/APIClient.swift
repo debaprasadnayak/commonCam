@@ -11,10 +11,12 @@ public struct EventGroup: Codable, Equatable, Identifiable, Sendable {
     public let storageUsedBytes: Int64
     public let startsAt: Date
     public let endsAt: Date
+    /// Set while the group is in Grace: downloads work until then, after that server media is deleted.
+    public var graceEndsAt: Date? = nil
 
     public init(
         id: String, tier: String, state: String, peopleCap: Int, storageCapBytes: Int64, storageUsedBytes: Int64 = 0,
-        startsAt: Date, endsAt: Date
+        startsAt: Date, endsAt: Date, graceEndsAt: Date? = nil
     ) {
         self.id = id
         self.tier = tier
@@ -24,6 +26,7 @@ public struct EventGroup: Codable, Equatable, Identifiable, Sendable {
         self.storageUsedBytes = storageUsedBytes
         self.startsAt = startsAt
         self.endsAt = endsAt
+        self.graceEndsAt = graceEndsAt
     }
 }
 

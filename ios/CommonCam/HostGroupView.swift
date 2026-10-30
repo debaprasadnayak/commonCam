@@ -14,6 +14,9 @@ struct HostGroupView: View {
 
     var body: some View {
         List {
+            if isHost && group.isReadOnly {
+                GraceSection(api: api, group: group)
+            }
             if isHost || invite != nil {
                 Section("Scan to join") {
                     if let invite, let image = QRCode.image(for: invite.joinUrl.absoluteString) {

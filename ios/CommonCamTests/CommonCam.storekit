@@ -48,6 +48,21 @@
       "productID" : "app.commoncam.tier.festival",
       "referenceName" : "Festival",
       "type" : "Consumable"
+    },
+    {
+      "displayPrice" : "2.99",
+      "familyShareable" : false,
+      "internalID" : "6700000004",
+      "localizations" : [
+        {
+          "description" : "Reopen an ended group for 7 more days. Placeholder price.",
+          "displayName" : "Extend group",
+          "locale" : "en_US"
+        }
+      ],
+      "productID" : "app.commoncam.extension",
+      "referenceName" : "Extension",
+      "type" : "Consumable"
     }
   ],
   "settings" : {

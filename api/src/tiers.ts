@@ -18,3 +18,6 @@ export function isPaidTier(tier: unknown): tier is PaidTier {
 
 /** Free Taster groups a device may ever create (SPEC.md section 15: Taster abuse). */
 export const TASTER_LIMIT_PER_DEVICE = 1;
+
+/** Paid extension of an ended group (lifecycle Grace → Active, #18): one consumable, same for every tier. */
+export const EXTENSION = { productId: "app.commoncam.extension", days: 7 } as const;

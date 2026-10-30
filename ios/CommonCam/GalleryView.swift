@@ -82,6 +82,7 @@ struct GalleryView: View {
             }
             .disabled(items.isEmpty || saveProgress != nil)
             Button("Take photo", systemImage: "camera") { isCameraOpen = true }
+                .disabled(group.isReadOnly) // ended groups take no uploads
         }
         .fullScreenCover(isPresented: $isCameraOpen) {
             CameraScreen(onCapture: { photo in Task { await share(photo) } }, onRecord: { clip in Task { await share(clip) } })
