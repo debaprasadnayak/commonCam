@@ -1,0 +1,95 @@
+import Foundation
+import Testing
+@testable import CommonCamKit
+
+final class StubURLProtocol: URLProtocol {
+    nonisolated(unsafe) static var requests: [URLRequest] = []
+    nonisolated(unsafe) static var responseBody = Data()
+    nonisolated(unsafe) static var statusCode = 200
+
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+    override func startLoading() {
+        var recorded = request
+        if let stream = request.httpBodyStream {
+            stream.open()
+            var body = Data()
+            var buffer = [UInt8](repeating: 0, count: 1024)
+            while stream.hasBytesAvailable {
+                let read = stream.read(&buffer, maxLength: buffer.count)
+                if read <= 0 { break }
+                body.append(buffer, count: read)
+            }
+            stream.close()
+            recorded.httpBody = body
+        }
+        Self.requests.append(recorded)
+        let response = HTTPURLResponse(url: request.url!, statusCode: Self.statusCode, httpVersion: nil, headerFields: nil)!
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: Self.responseBody)
+        client?.urlProtocolDidFinishLoading(self)
+    }
+
+    override func stopLoading() {}
+}
+
+private let groupJSON = """
+{"id":"g1","tier":"taster","state":"Active","peopleCap":4,"storageCapBytes":1073741824,
+ "startsAt":"2026-10-30T08:00:00.000Z","endsAt":"2026-10-31T08:00:00.000Z"}
+"""
+
+private let tasterGroup = EventGroup(
+    id: "g1", tier: "taster", state: "Active", peopleCap: 4, storageCapBytes: 1_073_741_824,
+    startsAt: Date(timeIntervalSince1970: 1_793_347_200), endsAt: Date(timeIntervalSince1970: 1_793_433_600)
+)
+
+@Suite(.serialized) struct APIClientTests {
+    let client: APIClient
+
+    init() {
+        StubURLProtocol.requests = []
+        StubURLProtocol.statusCode = 200
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [StubURLProtocol.self]
+        let store = InMemoryTokenStore()
+        store.token = "device-token"
+        client = APIClient(
+            baseURL: URL(string: "https://api.test")!,
+            identity: DeviceIdentity(store: store),
+            session: URLSession(configuration: config)
+        )
+    }
+
+    @Test func createsATasterGroupWithTheDeviceToken() async throws {
+        StubURLProtocol.statusCode = 201
+        StubURLProtocol.responseBody = Data(groupJSON.utf8)
+
+        let group = try await client.createTasterGroup()
+
+        #expect(group == tasterGroup)
+        let request = try #require(StubURLProtocol.requests.first)
+        #expect(request.httpMethod == "POST")
+        #expect(request.url?.absoluteString == "https://api.test/groups")
+        #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer device-token")
+        #expect(request.httpBody == Data(#"{"tier":"taster"}"#.utf8))
+    }
+
+    @Test func listsMyGroupsWithTheDeviceToken() async throws {
+        StubURLProtocol.responseBody = Data("[\(groupJSON)]".utf8)
+
+        let groups = try await client.myGroups()
+
+        #expect(groups == [tasterGroup])
+        let request = try #require(StubURLProtocol.requests.first)
+        #expect(request.httpMethod == "GET")
+        #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer device-token")
+    }
+
+    @Test func failsOnAnErrorStatus() async throws {
+        StubURLProtocol.statusCode = 401
+        StubURLProtocol.responseBody = Data()
+
+        await #expect(throws: APIError.self) { try await client.myGroups() }
+    }
+}

@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  api:
+    name: Worker API tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: api
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: api/package-lock.json
+      - run: npm ci
+      - run: npm test
+
+  ios:
+    name: iOS tests
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Swift package tests
+        working-directory: ios/CommonCamKit
+        run: swift test
+      - name: App tests (simulator)
+        working-directory: ios
+        run: |
+          DEVICE_ID=$(xcrun simctl list devices available -j | jq -r '[.devices[][] | select(.name | startswith("iPhone"))][0].udid')
+          xcodebuild test -project CommonCam.xcodeproj -scheme CommonCam -destination "id=$DEVICE_ID"
