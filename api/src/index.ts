@@ -1,7 +1,7 @@
 import { countGroupCreated } from "./analytics";
 import { handleApproval } from "./approval";
 import { handleDeleteItem } from "./deleteItem";
-import { insertTasterGroup, newGroupRow, toJson, type GroupRow } from "./groups";
+import { GROUP_SELECT, insertTasterGroup, newGroupRow, toJson, type GroupRow } from "./groups";
 import { handleExtension } from "./extension";
 import { handleHostControls } from "./hostControls";
 import { handleJoin, handlePublic } from "./join";
@@ -63,10 +63,7 @@ export default {
     }
 
     if (url.pathname === "/groups" && request.method === "GET") {
-      const { results } = await env.DB.prepare(
-        `SELECT id, tier, state, people_cap, storage_cap_bytes, storage_used_bytes, starts_at, ends_at, grace_ends_at
-         FROM groups WHERE host_device_id = ? ORDER BY starts_at DESC`,
-      )
+      const { results } = await env.DB.prepare(`${GROUP_SELECT} WHERE host_device_id = ? ORDER BY starts_at DESC`)
         .bind(deviceId)
         .all<GroupRow>();
       return Response.json(results.map(toJson));

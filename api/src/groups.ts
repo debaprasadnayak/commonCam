@@ -52,6 +52,14 @@ function values(hostDeviceId: string, row: GroupRow) {
   return [row.id, hostDeviceId, row.tier, row.people_cap, row.storage_cap_bytes, row.starts_at, row.ends_at, row.state];
 }
 
+/** Selects what `toJson` needs; every endpoint returning groups reads them with this, so their JSON matches. */
+export const GROUP_SELECT =
+  "SELECT id, tier, state, people_cap, storage_cap_bytes, storage_used_bytes, starts_at, ends_at, grace_ends_at FROM groups";
+
+export function loadGroup(db: D1Database, groupId: string) {
+  return db.prepare(`${GROUP_SELECT} WHERE id = ?`).bind(groupId).first<GroupRow>();
+}
+
 export function toJson(row: GroupRow) {
   return {
     id: row.id,

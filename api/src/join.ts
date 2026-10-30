@@ -1,6 +1,7 @@
 import { newMemberStatus } from "./approval";
 import { isHostOrCoHost, isJoiningPaused, joinRefusal } from "./hostControls";
-import { type Env, type GroupRow, toJson } from "./index";
+import { GROUP_SELECT, type GroupRow, toJson } from "./groups";
+import type { Env } from "./index";
 import { normalizePin } from "./pin";
 
 // Placeholders until the app is in App Store Connect and has an Apple team (see notes).
@@ -21,7 +22,6 @@ export interface MemberRow {
 }
 
 export const MEMBER_COLUMNS = "id, display_name, colour, role, status, consent_accepted_at, joined_at";
-const GROUP_COLUMNS = "id, tier, state, people_cap, storage_cap_bytes, storage_used_bytes, starts_at, ends_at";
 
 /** Routes reachable without a device token: what a phone without the app sees after scanning. */
 export function handlePublic(url: URL): Response | null {
@@ -92,9 +92,9 @@ async function join(request: Request, env: Env, deviceId: string): Promise<Respo
   const pin = normalizePin(body.pin);
   const group =
     typeof body.qrToken === "string"
-      ? await env.DB.prepare(`SELECT ${GROUP_COLUMNS} FROM groups WHERE qr_token = ?`).bind(body.qrToken).first<GroupRow>()
+      ? await env.DB.prepare(`${GROUP_SELECT} WHERE qr_token = ?`).bind(body.qrToken).first<GroupRow>()
       : pin
-        ? await env.DB.prepare(`SELECT ${GROUP_COLUMNS} FROM groups WHERE pin = ?`).bind(pin).first<GroupRow>()
+        ? await env.DB.prepare(`${GROUP_SELECT} WHERE pin = ?`).bind(pin).first<GroupRow>()
         : null;
   if (!group) {
     await recordFailure(env, keys);

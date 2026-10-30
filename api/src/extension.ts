@@ -1,4 +1,4 @@
-import { toJson, type GroupRow } from "./groups";
+import { loadGroup, toJson } from "./groups";
 import type { Env } from "./index";
 import { isReplayedTransaction, verifyPurchase } from "./purchases";
 import { EXTENSION, type Tier } from "./tiers";
@@ -48,11 +48,7 @@ export async function handleExtension(request: Request, url: URL, env: Env, devi
     throw error;
   }
 
-  const row = await env.DB.prepare(
-    "SELECT id, tier, state, people_cap, storage_cap_bytes, storage_used_bytes, starts_at, ends_at, grace_ends_at FROM groups WHERE id = ?",
-  )
-    .bind(groupId)
-    .first<GroupRow>();
+  const row = await loadGroup(env.DB, groupId);
   if (row!.state !== "Active") return new Response("This group has been deleted", { status: 410 });
   return Response.json(toJson(row!));
 }

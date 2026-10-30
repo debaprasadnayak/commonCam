@@ -1,5 +1,5 @@
 import type { AppStoreTransaction } from "./appStore";
-import { toJson, type GroupRow } from "./groups";
+import { loadGroup, toJson } from "./groups";
 import { isHostOrCoHost } from "./hostControls";
 import type { Env } from "./index";
 import { isOpen } from "./media";
@@ -117,13 +117,4 @@ export function raiseLimits(
        WHERE id = ?5 AND tier = ?6 AND state = 'Active'`,
     )
     .bind(newTier, increase.peopleCap, increase.storageCapBytes, `+${increase.days} days`, groupId, expectedTier);
-}
-
-function loadGroup(db: D1Database, groupId: string) {
-  return db
-    .prepare(
-      "SELECT id, tier, state, people_cap, storage_cap_bytes, storage_used_bytes, starts_at, ends_at FROM groups WHERE id = ?",
-    )
-    .bind(groupId)
-    .first<GroupRow>();
 }
