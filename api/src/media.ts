@@ -201,7 +201,14 @@ async function confirmItem(request: Request, env: Env, groupId: string, deviceId
     if (!current || current.status === "expired" || (current.status === "pending" && current.reserved_until <= now)) {
       return new Response("Unknown item", { status: 404 });
     }
-    if (current.status !== "pending") return new Response("Already being confirmed", { status: 409 });
+    // A simultaneous retry won the claim: answer like any repeated confirm once it is ready. 'confirming' only
+    // exists inside the other confirm's D1 transaction, so this is a brief, retryable 409 (the app's queue retries it).
+    if (current.status === "ready") {
+      return Response.json(await itemJson(env, await findItem(env, item.id), new URL(request.url).origin, true));
+    }
+    if (current.status === "confirming") {
+      return new Response("Being confirmed by another request; retry", { status: 409, headers: { "Retry-After": "1" } });
+    }
     return refuseForStorage(env, groupId);
   }
   await syncStorageWarnings(env, groupId);

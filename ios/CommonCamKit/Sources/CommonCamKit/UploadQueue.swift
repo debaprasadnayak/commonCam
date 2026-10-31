@@ -246,6 +246,7 @@ public actor UploadQueue {
     }
 
     /// The server will never accept these: bad request, not (or no longer) a member, group ended.
+    /// 409 is not among them: parts still missing, or a confirm racing another confirm of the same item; both are retried.
     private static func isPermanent(_ error: APIError) -> Bool {
         [400, 403, 404, 410].contains(error.statusCode)
     }

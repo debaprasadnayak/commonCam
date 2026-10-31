@@ -203,6 +203,22 @@ struct UploadQueueTests {
         #expect(await server.stored["item-2"] == photo(5).data)
     }
 
+    @Test func aConfirmStillInProgressOnTheServerIsRetriedNotFailed() async throws {
+        let queue = makeQueue()
+        _ = try await queue.enqueue(photo(5), in: "g1")
+        // The Worker answers 409 + Retry-After while a simultaneous confirm of the same item is in flight.
+        await server.refuseConfirm(with: APIError(statusCode: 409))
+        await queue.run()
+        #expect(await queue.uploads.first?.failure == nil)
+        #expect(await queue.uploads.first?.isPending == true)
+
+        await server.refuseConfirm(with: nil)
+        let confirmed = await queue.run()
+
+        #expect(confirmed.map(\.id) == ["item-1"])
+        #expect(await server.starts == 1)
+    }
+
     @Test func aGroupThatEndedStopsRetryingAndKeepsTheShotMarkedFailed() async throws {
         let queue = makeQueue()
         _ = try await queue.enqueue(photo(5), in: "g1")
