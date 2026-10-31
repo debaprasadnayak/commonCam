@@ -129,7 +129,12 @@ describe("bounded local stress audit", () => {
     const host = "stress-storage";
     const created = await group(host);
     await env.DB.prepare("UPDATE groups SET storage_cap_bytes = 8 WHERE id = ?").bind(created.id).run();
-    const tickets = await parallel(32, 32, () => ticket(host, created.id));
+    // Tickets beyond the cap are now refused up front (413): the bytes are reserved before a ticket is issued.
+    const requests = await parallel(32, 32, () => api(`/groups/${created.id}/uploads`, host, "POST",
+      JSON.stringify({ bytes: 1, contentType: "image/heic" })));
+    expect(requests.every((response) => [201, 413].includes(response.status))).toBe(true);
+    const tickets = await Promise.all(requests.filter((r) => r.status === 201).map((r) => r.json<Ticket>()));
+    expect(tickets.length).toBeLessThanOrEqual(8);
     const puts = await parallel(tickets.length, 32, (index) =>
       api(tickets[index].uploadUrl, host, "PUT", new Uint8Array([index])));
     const objects = await env.MEDIA.list({ prefix: `groups/${created.id}/` });
@@ -138,6 +143,7 @@ describe("bounded local stress audit", () => {
       api(`/groups/${created.id}/items`, host, "POST", JSON.stringify({ itemId: tickets[index].itemId })));
     const [listed] = await (await api("/groups", host)).json<Group[]>();
     record("pending-media-cap", { requests: 32, capBytes: 8, storedBytes,
+      ticketStatuses: statuses(requests.map((r) => r.status)),
       putStatuses: statuses(puts.map((r) => r.status)),
       confirmStatuses: statuses(confirmations.map((r) => r.status)), accountedBytes: listed.storageUsedBytes });
     expect(listed.storageUsedBytes).toBeLessThanOrEqual(8);

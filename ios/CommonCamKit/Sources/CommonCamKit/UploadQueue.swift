@@ -160,7 +160,25 @@ public actor UploadQueue {
             }
         }
         guard let itemID = upload.itemID else { return nil }
+        do {
+            return try await send(upload, as: itemID)
+        } catch let error as APIError where error.statusCode == 404 {
+            // The server no longer knows this upload: its storage reservation lapsed and the half-sent bytes were
+            // deleted. Start a new upload on the next run; that request decides whether we may still contribute.
+            try update(id) { upload in
+                upload.itemID = nil
+                upload.partSize = nil
+                upload.partCount = nil
+                upload.uploadedParts = []
+                upload.isAssembled = false
+            }
+            throw UploadExpired()
+        }
+    }
 
+    private func send(_ upload: QueuedUpload, as itemID: String) async throws -> GalleryItem? {
+        let id = upload.id
+        var upload = upload
         if !upload.isAssembled {
             let plan = try await service.partPlan(itemID: itemID, in: upload.groupID)
             upload = try update(id) { $0.uploadedParts = Set(plan.uploadedParts) }
@@ -210,6 +228,8 @@ public actor UploadQueue {
 
     /// Thrown when a shot is removed while it is being sent.
     private struct Removed: Error {}
+    /// Thrown when the server expired a started upload; the shot is retried from the start.
+    private struct UploadExpired: Error {}
 
     @discardableResult
     private func update(_ id: UUID, _ change: (inout QueuedUpload) -> Void) throws -> QueuedUpload {

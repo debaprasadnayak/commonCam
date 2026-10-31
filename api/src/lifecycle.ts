@@ -1,5 +1,6 @@
 import type { Env } from "./index";
 import { sendGraceReminders } from "./push";
+import { expireReservations } from "./reservations";
 
 /**
  * The scheduled lifecycle job (ARCHITECTURE.md section 6), run hourly by the cron trigger in wrangler.jsonc.
@@ -7,6 +8,7 @@ import { sendGraceReminders } from "./push";
  */
 export async function runLifecycle(env: Env, now: number): Promise<void> {
   await enterGrace(env, now);
+  await expireReservations(env, now);
   await sendGraceReminders(env, now);
   await deleteAfterGrace(env, now);
 }

@@ -19,6 +19,11 @@ actor FakeServer: UploadService {
 
     func refuseEverything(with error: APIError?) { refuse = error }
     func refuseConfirm(with error: Error?) { confirmRefusal = error }
+    /// The Worker's hourly job deleted an abandoned upload whose storage reservation lapsed.
+    func expire(_ itemID: String) {
+        uploads[itemID] = nil
+        stored[itemID] = nil
+    }
 
     func startUpload(bytes: Int64, contentType: String, in groupID: String) async throws -> MultipartUpload {
         if let refuse { throw refuse }
@@ -32,7 +37,7 @@ actor FakeServer: UploadService {
 
     func partPlan(itemID: String, in groupID: String) async throws -> PartUploadPlan {
         if let refuse { throw refuse }
-        let upload = try #require(uploads[itemID])
+        guard let upload = uploads[itemID] else { throw APIError(statusCode: 404) }
         let partCount = Int((upload.bytes + partSize - 1) / partSize)
         let missing = (1...partCount).filter { upload.parts[$0] == nil }
         return PartUploadPlan(
@@ -48,7 +53,7 @@ actor FakeServer: UploadService {
     }
 
     func completeUpload(itemID: String, in groupID: String) async throws {
-        let upload = try #require(uploads[itemID])
+        guard let upload = uploads[itemID] else { throw APIError(statusCode: 404) }
         let partCount = Int((upload.bytes + partSize - 1) / partSize)
         guard upload.parts.count == partCount else { throw APIError(statusCode: 409) }
         stored[itemID] = upload.parts.keys.sorted().reduce(into: Data()) { $0.append(upload.parts[$1]!) }
@@ -57,7 +62,7 @@ actor FakeServer: UploadService {
 
     func confirmUpload(itemID: String, filterRecipe: FilterRecipe?, sensitive: Bool, in groupID: String) async throws -> GalleryItem {
         if let confirmRefusal { throw confirmRefusal }
-        let data = try #require(stored[itemID])
+        guard let data = stored[itemID] else { throw APIError(statusCode: 404) }
         confirmedRecipes[itemID] = filterRecipe
         flagged[itemID] = sensitive
         return GalleryItem(
@@ -164,6 +169,38 @@ struct UploadQueueTests {
 
         #expect(transport.sentParts == [1, 3])
         #expect(await server.stored["item-1"] == photo(25).data)
+    }
+
+    @Test func anUploadTheServerExpiredWhileHalfSentStartsOverInsteadOfFailing() async throws {
+        let queue = makeQueue()
+        _ = try await queue.enqueue(photo(25), in: "g1")
+        transport.failing = [2]
+        await queue.run()
+        await server.expire("item-1")
+        transport.failing = []
+
+        await queue.run()
+        #expect(await queue.uploads.first?.isPending == true)
+        let confirmed = await queue.run()
+
+        #expect(confirmed.map(\.id) == ["item-2"])
+        #expect(await server.stored["item-2"] == photo(25).data)
+        #expect(await queue.uploads.isEmpty)
+    }
+
+    @Test func anUploadTheServerExpiredBeforeItWasConfirmedStartsOver() async throws {
+        let queue = makeQueue()
+        _ = try await queue.enqueue(photo(5), in: "g1")
+        await server.refuseConfirm(with: URLError(.timedOut))
+        await queue.run()
+        await server.expire("item-1")
+        await server.refuseConfirm(with: nil)
+
+        await queue.run()
+        let confirmed = await queue.run()
+
+        #expect(confirmed.map(\.id) == ["item-2"])
+        #expect(await server.stored["item-2"] == photo(5).data)
     }
 
     @Test func aGroupThatEndedStopsRetryingAndKeepsTheShotMarkedFailed() async throws {
