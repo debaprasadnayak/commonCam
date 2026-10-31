@@ -1,4 +1,5 @@
 import type { Env } from "./index";
+import { signEs256Jwt } from "./jwt";
 import type { Push, PushSender } from "./push";
 
 export interface ApnsConfig {
@@ -63,23 +64,7 @@ export function apnsSender(config: ApnsConfig, fetchFn: typeof fetch = fetch, no
 async function providerToken(config: ApnsConfig, now: number): Promise<string> {
   const cacheKey = `${config.teamId}/${config.keyId}`;
   if (cachedJwt && cachedJwt.cacheKey === cacheKey && now - cachedJwt.issuedAt < JWT_LIFETIME_MS) return cachedJwt.jwt;
-  const key = await crypto.subtle.importKey("pkcs8", pemBytes(config.privateKey), { name: "ECDSA", namedCurve: "P-256" }, false, ["sign"]);
-  const signingInput = `${base64url(JSON.stringify({ alg: "ES256", kid: config.keyId }))}.${base64url(
-    JSON.stringify({ iss: config.teamId, iat: Math.floor(now / 1000) }),
-  )}`;
-  // Web Crypto's ECDSA signature is raw r||s, which is exactly what JWS ES256 wants.
-  const signature = await crypto.subtle.sign({ name: "ECDSA", hash: "SHA-256" }, key, new TextEncoder().encode(signingInput));
-  const jwt = `${signingInput}.${base64url(new Uint8Array(signature))}`;
+  const jwt = await signEs256Jwt(config.privateKey, { kid: config.keyId }, { iss: config.teamId, iat: Math.floor(now / 1000) });
   cachedJwt = { cacheKey, jwt, issuedAt: now };
   return jwt;
-}
-
-function pemBytes(pem: string): Uint8Array {
-  const base64 = pem.replace(/-----[^-]+-----/g, "").replace(/\s+/g, "");
-  return Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
-}
-
-function base64url(data: string | Uint8Array): string {
-  const bytes = typeof data === "string" ? new TextEncoder().encode(data) : data;
-  return btoa(String.fromCharCode(...bytes)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }

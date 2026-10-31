@@ -1,4 +1,5 @@
 import { countGroupCreated } from "./analytics";
+import { handleAppStoreNotifications } from "./appStoreNotifications";
 import { handleApproval } from "./approval";
 import { handleDeleteItem } from "./deleteItem";
 import { GROUP_SELECT, insertTasterGroup, newGroupRow, toJson, type GroupRow } from "./groups";
@@ -33,6 +34,13 @@ export interface Env {
   APNS_PRIVATE_KEY?: string;
   /** "production" → api.push.apple.com; anything else → the sandbox (development builds). */
   APNS_ENV?: string;
+  /**
+   * App Store Server API (appStoreServerApi.ts), to check a purchase's current refund state before granting it.
+   * APPSTORE_PRIVATE_KEY is a secret (In-App Purchase .p8 PEM). Unset → Production refuses purchases with 503, Sandbox allows them.
+   */
+  APPSTORE_ISSUER_ID?: string;
+  APPSTORE_KEY_ID?: string;
+  APPSTORE_PRIVATE_KEY?: string;
 }
 
 export { toJson, type GroupRow } from "./groups";
@@ -46,6 +54,8 @@ export default {
     if (signedMediaResponse) return signedMediaResponse;
     const signedPartResponse = await handleSignedParts(request, url, env);
     if (signedPartResponse) return signedPartResponse;
+    const appStoreResponse = await handleAppStoreNotifications(request, url, env);
+    if (appStoreResponse) return appStoreResponse;
     const deviceToken = request.headers.get("Authorization")?.match(/^Bearer (\S+)$/)?.[1];
     if (!deviceToken) return new Response("Missing device token", { status: 401 });
     const deviceId = await sha256Hex(deviceToken);

@@ -46,7 +46,27 @@ const OID = {
   appleLeafMarker: "1.2.840.113635.100.6.11.1",
 };
 
-export async function verifySignedTransaction(jws: string, trust: AppStoreTrust): Promise<AppStoreTransaction> {
+/**
+ * A StoreKit/App Store Server API signed transaction for this app and environment. Refunded or revoked
+ * transactions (`revocationDate`) are refused unless `allowRevoked` (to read a refund's details).
+ */
+export async function verifySignedTransaction(
+  jws: string,
+  trust: AppStoreTrust,
+  { allowRevoked = false } = {},
+): Promise<AppStoreTransaction> {
+  const payload = (await verifyAppleSignedPayload(jws, trust)) as AppStoreTransaction;
+  if (payload.bundleId !== trust.bundleId) throw new InvalidTransaction("Transaction is for another app");
+  if (payload.environment !== trust.environment) throw new InvalidTransaction(`Not a ${trust.environment} transaction`);
+  if (typeof payload.transactionId !== "string" || typeof payload.productId !== "string") {
+    throw new InvalidTransaction("Transaction is missing ids");
+  }
+  if (payload.revocationDate !== undefined && !allowRevoked) throw new InvalidTransaction("Transaction was refunded or revoked");
+  return payload;
+}
+
+/** The JSON payload of any App Store-signed JWS (transactions, server notifications), after checking the x5c chain and signature. */
+export async function verifyAppleSignedPayload(jws: string, trust: Pick<AppStoreTrust, "rootCertB64" | "now">): Promise<Record<string, unknown>> {
   const parts = jws.split(".");
   if (parts.length !== 3) throw new InvalidTransaction("Not a compact JWS");
   const [headerPart, payloadPart, signaturePart] = parts;
@@ -83,14 +103,7 @@ export async function verifySignedTransaction(jws: string, trust: AppStoreTrust)
   );
   if (!jwsValid) throw new InvalidTransaction("Bad JWS signature");
 
-  const payload = parseJson(base64UrlDecode(payloadPart)) as AppStoreTransaction;
-  if (payload.bundleId !== trust.bundleId) throw new InvalidTransaction("Transaction is for another app");
-  if (payload.environment !== trust.environment) throw new InvalidTransaction(`Not a ${trust.environment} transaction`);
-  if (typeof payload.transactionId !== "string" || typeof payload.productId !== "string") {
-    throw new InvalidTransaction("Transaction is missing ids");
-  }
-  if (payload.revocationDate !== undefined) throw new InvalidTransaction("Transaction was refunded or revoked");
-  return payload;
+  return parseJson(base64UrlDecode(payloadPart));
 }
 
 interface Certificate {
