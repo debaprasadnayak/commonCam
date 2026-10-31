@@ -4,22 +4,22 @@
   - import "./test/support/fakeAppStore" without a file extension (vitest.config.ts:4:47). Add the file extension
 Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
 
- RUN  v4.1.12 /Users/debanayak/Documents/Eqn Code Repo/commonCam/api
+ RUN  v4.1.12 /Users/debanayak/Documents/Eqn Code Repo/commonCam-security/api
 
 stdout | test/stress.audit.ts > bounded local stress audit > serves 128 group reads at concurrency 1
-AUDIT {"scenario":"group-reads","concurrency":1,"requests":128,"elapsedMs":133,"requestsPerSecond":962.406015037594,"p50Ms":1,"p95Ms":2,"p99Ms":2,"statuses":{"200":128}}
+AUDIT {"scenario":"group-reads","concurrency":1,"requests":128,"elapsedMs":102,"requestsPerSecond":1254.9019607843138,"p50Ms":1,"p95Ms":2,"p99Ms":2,"statuses":{"200":128}}
 
 stdout | test/stress.audit.ts > bounded local stress audit > serves 128 group reads at concurrency 8
-AUDIT {"scenario":"group-reads","concurrency":8,"requests":128,"elapsedMs":71,"requestsPerSecond":1802.8169014084508,"p50Ms":4,"p95Ms":5,"p99Ms":5,"statuses":{"200":128}}
+AUDIT {"scenario":"group-reads","concurrency":8,"requests":128,"elapsedMs":56,"requestsPerSecond":2285.714285714286,"p50Ms":3,"p95Ms":4,"p99Ms":5,"statuses":{"200":128}}
 
 stdout | test/stress.audit.ts > bounded local stress audit > serves 128 group reads at concurrency 32
-AUDIT {"scenario":"group-reads","concurrency":32,"requests":128,"elapsedMs":63,"requestsPerSecond":2031.7460317460318,"p50Ms":14,"p95Ms":18,"p99Ms":18,"statuses":{"200":128}}
+AUDIT {"scenario":"group-reads","concurrency":32,"requests":128,"elapsedMs":59,"requestsPerSecond":2169.491525423729,"p50Ms":12,"p95Ms":16,"p99Ms":16,"statuses":{"200":128}}
 
 stdout | test/stress.audit.ts > bounded local stress audit > serves 128 group reads at concurrency 64
-AUDIT {"scenario":"group-reads","concurrency":64,"requests":128,"elapsedMs":90,"requestsPerSecond":1422.2222222222222,"p50Ms":39,"p95Ms":44,"p99Ms":45,"statuses":{"200":128}}
+AUDIT {"scenario":"group-reads","concurrency":64,"requests":128,"elapsedMs":54,"requestsPerSecond":2370.3703703703704,"p50Ms":25,"p95Ms":27,"p99Ms":27,"statuses":{"200":128}}
 
 stdout | test/stress.audit.ts > bounded local stress audit > serves 1024 group reads at concurrency 128
-AUDIT {"scenario":"group-reads","concurrency":128,"requests":1024,"elapsedMs":569,"requestsPerSecond":1799.6485061511423,"p50Ms":59,"p95Ms":77,"p99Ms":80,"statuses":{"200":1024}}
+AUDIT {"scenario":"group-reads","concurrency":128,"requests":1024,"elapsedMs":723,"requestsPerSecond":1416.3208852005532,"p50Ms":53,"p95Ms":181,"p99Ms":206,"statuses":{"200":1024}}
 
 stdout | test/stress.audit.ts > bounded local stress audit > bounds same-device free-group creation during a 64-request burst
 AUDIT {"scenario":"same-device-group-burst","requests":64,"statuses":{"201":1,"403":63},"groups":1}
@@ -34,164 +34,30 @@ stdout | test/stress.audit.ts > bounded local stress audit > keeps the people ca
 AUDIT {"scenario":"concurrent-join-cap","attempt":2,"requests":24,"statuses":{"201":3,"409":21},"activeGuests":3,"peopleCap":4}
 
 stdout | test/stress.audit.ts > bounded local stress audit > rate-limits a burst of 32 invite guesses from one IP
-AUDIT {"scenario":"concurrent-invite-guessing","requests":32,"statuses":{"404":32},"allowed":32}
+AUDIT {"scenario":"concurrent-invite-guessing","requests":32,"statuses":{"404":10,"429":22},"allowed":10}
 
 stdout | test/stress.audit.ts > bounded local stress audit > rate-limits the sequential control of 32 invite guesses
 AUDIT {"scenario":"sequential-invite-control","requests":32,"statuses":{"404":10,"429":22}}
 
 stdout | test/stress.audit.ts > bounded local stress audit > does not store pending media beyond a group cap
-AUDIT {"scenario":"pending-media-cap","requests":32,"capBytes":8,"storedBytes":32,"putStatuses":{"200":32},"confirmStatuses":{"201":8,"413":24},"accountedBytes":8}
+AUDIT {"scenario":"pending-media-cap","requests":32,"capBytes":8,"storedBytes":8,"ticketStatuses":{"201":8,"413":24},"putStatuses":{"200":8},"confirmStatuses":{"201":8},"accountedBytes":8}
 
 stdout | test/stress.audit.ts > bounded local stress audit > accounts for one upload once under 24 simultaneous confirmations
-AUDIT {"scenario":"same-item-confirmation","requests":24,"statuses":{"200":13,"201":1,"409":10},"accountedBytes":1,"galleryItems":1}
+AUDIT {"scenario":"same-item-confirmation","requests":24,"statuses":{"200":23,"201":1},"accountedBytes":1,"galleryItems":1}
 
 stdout | test/stress.audit.ts > bounded local stress audit > round-trips 8 MiB of concurrent media and consumes 16 MiB of downloads
-AUDIT {"scenario":"media-streams","uploadCount":32,"downloadCount":64,"uploadConcurrency":8,"downloadConcurrency":16,"bytesPerObject":262144,"uploadBytes":8388608,"downloadBytes":16777216,"elapsedMs":347,"uploadStatuses":{"201":32},"downloadStatuses":{"200":64},"accountedBytes":8388608}
+AUDIT {"scenario":"media-streams","uploadCount":32,"downloadCount":64,"uploadConcurrency":8,"downloadConcurrency":16,"bytesPerObject":262144,"uploadBytes":8388608,"downloadBytes":16777216,"elapsedMs":378,"uploadStatuses":{"201":32},"downloadStatuses":{"200":64},"accountedBytes":8388608}
 
-uncaught exception; source = Uncaught (in promise); stack = TypeError: Cannot read properties of null (reading 'tier')
-    at Object.fetch (/Users/debanayak/Documents/Eqn Code Repo/commonCam/api/src/index.ts:57:27)
-uncaught exception; source = Uncaught (in promise); stack = TypeError: Cannot read properties of null (reading 'pin')
-    at join (/Users/debanayak/Documents/Eqn Code Repo/commonCam/api/src/join.ts:109:33)
-    at Object.fetch (/Users/debanayak/Documents/Eqn Code Repo/commonCam/api/src/index.ts:84:26)
-uncaught exception; source = Uncaught (in promise); stack = TypeError: Cannot read properties of null (reading 'bytes')
-    at createPendingItem (/Users/debanayak/Documents/Eqn Code Repo/commonCam/api/src/media.ts:119:22)
-    at requestUpload (/Users/debanayak/Documents/Eqn Code Repo/commonCam/api/src/media.ts:89:16)
-    at Object.fetch (/Users/debanayak/Documents/Eqn Code Repo/commonCam/api/src/index.ts:89:27)
-uncaught exception; source = Uncaught (in promise); stack = TypeError: Cannot read properties of null (reading 'filterRecipe')
-    at confirmItem (/Users/debanayak/Documents/Eqn Code Repo/commonCam/api/src/media.ts:143:41)
-    at Object.fetch (/Users/debanayak/Documents/Eqn Code Repo/commonCam/api/src/index.ts:89:27)
-uncaught exception; source = Uncaught (in promise); stack = TypeError: Cannot read properties of null (reading 'bytes')
-    at createPendingItem (/Users/debanayak/Documents/Eqn Code Repo/commonCam/api/src/media.ts:119:22)
-    at start (/Users/debanayak/Documents/Eqn Code Repo/commonCam/api/src/multipart.ts:66:16)
-    at Object.fetch (/Users/debanayak/Documents/Eqn Code Repo/commonCam/api/src/index.ts:95:31)
-uncaught exception; source = Uncaught (in promise); stack = TypeError: Cannot read properties of null (reading 'token')
-    at handlePushToken (/Users/debanayak/Documents/Eqn Code Repo/commonCam/api/src/push.ts:30:29)
-    at Object.fetch (/Users/debanayak/Documents/Eqn Code Repo/commonCam/api/src/index.ts:72:31)
 stdout | test/stress.audit.ts > bounded local stress audit > returns client errors rather than server failures for malformed JSON shapes
-AUDIT {"scenario":"invalid-json-shapes","requests":42,"statuses":{"400":24,"404":12},"failures":[{"path":"/groups","body":"null","status":null,"exception":"Cannot read properties of null (reading 'tier')"},{"path":"/join","body":"null","status":null,"exception":"Cannot read properties of null (reading 'pin')"},{"path":"/groups/f79663eb-3413-4f75-b9f6-37440aea00a3/uploads","body":"null","status":null,"exception":"Cannot read properties of null (reading 'bytes')"},{"path":"/groups/f79663eb-3413-4f75-b9f6-37440aea00a3/items","body":"null","status":null,"exception":"Cannot read properties of null (reading 'filterRecipe')"},{"path":"/groups/f79663eb-3413-4f75-b9f6-37440aea00a3/multipart","body":"null","status":null,"exception":"Cannot read properties of null (reading 'bytes')"},{"path":"/devices/push-token","body":"null","status":null,"exception":"Cannot read properties of null (reading 'token')"}]}
+AUDIT {"scenario":"invalid-json-shapes","requests":42,"statuses":{"400":40,"404":2},"failures":[]}
 
- ❯ test/stress.audit.ts (15 tests | 4 failed) 1861ms
-     ✓ serves 128 group reads at concurrency 1 140ms
-     ✓ serves 128 group reads at concurrency 8 74ms
-     ✓ serves 128 group reads at concurrency 32 66ms
-     ✓ serves 128 group reads at concurrency 64 93ms
-     ✓ serves 1024 group reads at concurrency 128  573ms
-     ✓ bounds same-device free-group creation during a 64-request burst 43ms
-     ✓ keeps the people cap under 24 concurrent joins, attempt 1 60ms
-     ✓ keeps the people cap under 24 concurrent joins, attempt 2 63ms
-     ✓ keeps the people cap under 24 concurrent joins, attempt 3 51ms
-     × rate-limits a burst of 32 invite guesses from one IP 49ms
-     ✓ rate-limits the sequential control of 32 invite guesses 51ms
-     × does not store pending media beyond a group cap 177ms
-     × accounts for one upload once under 24 simultaneous confirmations 42ms
-     ✓ round-trips 8 MiB of concurrent media and consumes 16 MiB of downloads  349ms
-     × returns client errors rather than server failures for malformed JSON shapes 30ms
+ ✓ test/stress.audit.ts (15 tests) 1874ms
+     ✓ serves 1024 group reads at concurrency 128  726ms
+     ✓ round-trips 8 MiB of concurrent media and consumes 16 MiB of downloads  379ms
 
-⎯⎯⎯⎯⎯⎯⎯ Failed Tests 4 ⎯⎯⎯⎯⎯⎯⎯
+ Test Files  1 passed (1)
+      Tests  15 passed (15)
+   Start at  01:36:38
+   Duration  2.35s (transform 61ms, setup 116ms, import 10ms, tests 1.87s, environment 0ms)
 
- FAIL  test/stress.audit.ts > bounded local stress audit > rate-limits a burst of 32 invite guesses from one IP
-AssertionError: expected 32 to be less than or equal to 10
- ❯ test/stress.audit.ts:115:21
-    113|     const allowed = responses.filter((r) => r.status !== 429).length;
-    114|     record("concurrent-invite-guessing", { requests: 32, statuses: sta…
-    115|     expect(allowed).toBeLessThanOrEqual(10);
-       |                     ^
-    116|     expect(responses.every((r) => [404, 429].includes(r.status))).toBe…
-    117|   });
-
-⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/4]⎯
-
- FAIL  test/stress.audit.ts > bounded local stress audit > does not store pending media beyond a group cap
-AssertionError: expected 32 to be less than or equal to 8
- ❯ test/stress.audit.ts:144:25
-    142|       confirmStatuses: statuses(confirmations.map((r) => r.status)), a…
-    143|     expect(listed.storageUsedBytes).toBeLessThanOrEqual(8);
-    144|     expect(storedBytes).toBeLessThanOrEqual(8);
-       |                         ^
-    145|   });
-    146|
-
-⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/4]⎯
-
- FAIL  test/stress.audit.ts > bounded local stress audit > accounts for one upload once under 24 simultaneous confirmations
-AssertionError: expected false to be true // Object.is equality
-
-- Expected
-+ Received
-
-- true
-+ false
-
- ❯ test/stress.audit.ts:158:67
-    156|     record("same-item-confirmation", { requests: 24, statuses: statuse…
-    157|       accountedBytes: listed.storageUsedBytes, galleryItems: gallery.l…
-    158|     expect(responses.every((r) => [200, 201].includes(r.status))).toBe…
-       |                                                                   ^
-    159|     expect(listed.storageUsedBytes).toBe(1);
-    160|     expect(gallery).toHaveLength(1);
-
-⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/4]⎯
-
- FAIL  test/stress.audit.ts > bounded local stress audit > returns client errors rather than server failures for malformed JSON shapes
-AssertionError: expected [ { path: '/groups', …(3) }, …(5) ] to deeply equal []
-
-- Expected
-+ Received
-
-- []
-+ [
-+   {
-+     "body": "null",
-+     "exception": "Cannot read properties of null (reading 'tier')",
-+     "path": "/groups",
-+     "status": null,
-+   },
-+   {
-+     "body": "null",
-+     "exception": "Cannot read properties of null (reading 'pin')",
-+     "path": "/join",
-+     "status": null,
-+   },
-+   {
-+     "body": "null",
-+     "exception": "Cannot read properties of null (reading 'bytes')",
-+     "path": "/groups/f79663eb-3413-4f75-b9f6-37440aea00a3/uploads",
-+     "status": null,
-+   },
-+   {
-+     "body": "null",
-+     "exception": "Cannot read properties of null (reading 'filterRecipe')",
-+     "path": "/groups/f79663eb-3413-4f75-b9f6-37440aea00a3/items",
-+     "status": null,
-+   },
-+   {
-+     "body": "null",
-+     "exception": "Cannot read properties of null (reading 'bytes')",
-+     "path": "/groups/f79663eb-3413-4f75-b9f6-37440aea00a3/multipart",
-+     "status": null,
-+   },
-+   {
-+     "body": "null",
-+     "exception": "Cannot read properties of null (reading 'token')",
-+     "path": "/devices/push-token",
-+     "status": null,
-+   },
-+ ]
-
- ❯ test/stress.audit.ts:216:22
-    214|     record("invalid-json-shapes", { requests: results.length,
-    215|       statuses: statuses(results.flatMap((r) => r.status === null ? []…
-    216|     expect(failures).toEqual([]);
-       |                      ^
-    217|     expect(results.every((r) => r.status !== null && r.status >= 400 &…
-    218|   });
-
-⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/4]⎯
-
-
- Test Files  1 failed (1)
-      Tests  4 failed | 11 passed (15)
-   Start at  01:08:24
-   Duration  2.41s (transform 94ms, setup 161ms, import 14ms, tests 1.86s, environment 0ms)
-
-JSON report written to /Users/debanayak/Documents/Eqn Code Repo/commonCam/api/reports/stress-results-2026-10-31.json
+JSON report written to /Users/debanayak/Documents/Eqn Code Repo/commonCam-security/api/reports/stress-results-2026-10-31.json

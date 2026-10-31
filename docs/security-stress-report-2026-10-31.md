@@ -160,3 +160,17 @@ npm exec -- vitest run --config vitest.stress.config.ts --reporter=default --rep
 Exit code 1 is expected while these four defects remain. The harness is excluded from the default test filename pattern, so `npm test` still runs the original suite. The harness uses only test bindings; do not adapt it to a deployed URL without a separate approved test environment and resource budget.
 
 The normal API suite emits an exception from its deliberately induced D1 constraint failure while reporting all 200 tests passed. That baseline output is separate from the null-input failures in the stress suite.
+
+## Remediation
+
+Fixed on branch `fix/security-stress`, one commit per finding. The stress suite now passes all 15 checks (5 consecutive runs plus the recorded run); the [results](../api/reports/stress-results-2026-10-31.json) and [run log](../api/reports/stress-run-2026-10-31.log) above were regenerated from the passing run. The normal API suite passes 225 tests in 22 files and the Swift package 130 tests.
+
+| Finding | Commit | Fix | Tests |
+|---|---|---|---|
+| SEC-01 / ST-01 | `fa05ce2` | Upload tickets and multipart starts reserve their bytes with one conditional D1 insert (ready + reserved + new ≤ cap). PUTs, part uploads, completion and confirm need a live reservation (1 h single, 24 h multipart, renewed by plan/complete). The hourly job expires lapsed ones (abort multipart, delete R2 object and rows, clear `storage_full`); R2 assembly failures release theirs. The iOS queue restarts a shot whose upload the server expired. | `api/test/uploadReservations.test.ts`; `UploadQueueTests` (expired upload starts over); stress "does not store pending media beyond a group cap" |
+| SEC-02 | `a926eb1` | `POST /app-store/notifications` (V2, chain-verified) records REFUND/REVOKE/REFUND_REVERSED per transaction id, newest `signedDate` wins. Every redemption also asks the App Store Server API for the current state; if Apple can't be asked, Production answers 503 and Sandbox allows with a log line (README). | `api/test/appStoreRevocations.test.ts` |
+| ST-03 | `c35d398` | Shared `readJsonObject` (400 for malformed/empty JSON, null, arrays, primitives) used by every JSON route. | `api/test/jsonBodies.test.ts`; stress "returns client errors…" |
+| ST-02 | `902e16f` | One conditional insert checks and consumes a guess for both the IP and device keys before the lookup; valid codes and malformed bodies are given back. Applies to QR and PIN. | burst tests in `api/test/join.test.ts` and `api/test/pin.test.ts`; stress "rate-limits a burst of 32 invite guesses" |
+| ST-04 | `7765e96` | A confirm that loses the claim returns the ready item (200), or 409 with `Retry-After: 1` while the other confirm is in flight; the upload queue retries 409. | `api/test/media.test.ts` (24 simultaneous confirms); `UploadQueueTests` (409 retried); stress "accounts for one upload once…" |
+
+The stress check "does not store pending media beyond a group cap" was adapted to the fix: tickets beyond the cap are now refused with 413, so the scenario accepts 201 or 413 per ticket and additionally asserts that at most 8 were issued. Its storage assertions are unchanged.
