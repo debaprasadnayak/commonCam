@@ -88,3 +88,9 @@ jobs:
         run: |
           if [ -z "$APNS_PRIVATE_KEY" ]; then echo "APNS_PRIVATE_KEY not set; pushes stay off"; exit 0; fi
           printf '%s' "$APNS_PRIVATE_KEY" | npx wrangler secret put APNS_PRIVATE_KEY --name commoncam-api-dev
+      - name: Set APPSTORE_PRIVATE_KEY (skipped until the secret exists)
+        env:
+          APPSTORE_PRIVATE_KEY: ${{ secrets.APPSTORE_PRIVATE_KEY }}
+        run: |
+          if [ -z "$APPSTORE_PRIVATE_KEY" ]; then echo "APPSTORE_PRIVATE_KEY not set; Sandbox purchases skip the App Store Server API check"; exit 0; fi
+          printf '%s' "$APPSTORE_PRIVATE_KEY" | npx wrangler secret put APPSTORE_PRIVATE_KEY --name commoncam-api-dev

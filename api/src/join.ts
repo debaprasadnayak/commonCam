@@ -1,4 +1,5 @@
 import { newMemberStatus } from "./approval";
+import { readJsonObject } from "./body";
 import { isHostOrCoHost, isJoiningPaused, joinRefusal } from "./hostControls";
 import { GROUP_SELECT, type GroupRow, toJson } from "./groups";
 import type { Env } from "./index";
@@ -101,11 +102,14 @@ async function join(request: Request, env: Env, deviceId: string): Promise<Respo
   const keys = [`device:${deviceId}`];
   const ip = request.headers.get("CF-Connecting-IP");
   if (ip) keys.push(`ip:${ip}`);
-  if (await isRateLimited(env, keys)) return new Response("Too many attempts, try again later", { status: 429 });
+  const attempt = await takeAttempt(env, keys);
+  if (!attempt) return new Response("Too many attempts, try again later", { status: 429 });
 
-  const body = await request
-    .json<{ qrToken?: unknown; pin?: unknown; displayName?: unknown; colour?: unknown; consent?: unknown }>()
-    .catch(() => ({}) as Record<string, unknown>);
+  const body = await readJsonObject(request);
+  if (body instanceof Response) {
+    await refundAttempt(env, attempt);
+    return body;
+  }
   const pin = normalizePin(body.pin);
   const group =
     typeof body.qrToken === "string"
@@ -113,10 +117,9 @@ async function join(request: Request, env: Env, deviceId: string): Promise<Respo
       : pin
         ? await env.DB.prepare(`${GROUP_SELECT} WHERE pin = ?`).bind(pin).first<GroupRow>()
         : null;
-  if (!group) {
-    await recordFailure(env, keys);
-    return new Response("Unknown QR code or PIN", { status: 404 });
-  }
+  // A wrong guess keeps the attempt recorded as a failure; anything that found a group gives it back.
+  if (!group) return new Response("Unknown QR code or PIN", { status: 404 });
+  await refundAttempt(env, attempt);
   // An active member may always get back in (e.g. to save photos during Grace); new joins need an open group.
   const existing = await env.DB.prepare(`SELECT ${MEMBER_COLUMNS} FROM members WHERE group_id = ? AND device_id = ?`)
     .bind(group.id, deviceId)
@@ -174,21 +177,31 @@ function joinResponse(group: GroupRow, member: MemberRow, okStatus: number): Res
   return Response.json({ group: toJson(group), member: memberJson(member) }, { status: member.status === "pending" ? 202 : okStatus });
 }
 
-async function isRateLimited(env: Env, keys: string[]): Promise<boolean> {
-  const since = new Date(Date.now() - FAILURE_WINDOW_MS).toISOString();
-  for (const key of keys) {
-    const count = await env.DB.prepare("SELECT COUNT(*) AS n FROM join_failures WHERE key = ? AND failed_at > ?")
-      .bind(key, since)
-      .first<number>("n");
-    if ((count ?? 0) >= MAX_FAILURES) return true;
-  }
-  return false;
+/**
+ * Checks and consumes one guess for every key (device hash, client IP) in a single statement, so simultaneous
+ * requests cannot all pass the check before any of them is counted: the attempt is recorded, for all keys, only if
+ * each key has fewer than MAX_FAILURES in the window. Returns the recorded rows' ids, or null when rate-limited.
+ * The attempt counts as a failed guess unless refunded (`refundAttempt`) once the code turns out to be valid.
+ */
+async function takeAttempt(env: Env, keys: string[]): Promise<number[] | null> {
+  const now = Date.now();
+  const keyList = keys.map((_, i) => `SELECT ?${i + 3} AS key`).join(" UNION ALL ");
+  const { results } = await env.DB.prepare(
+    `INSERT INTO join_failures (key, failed_at)
+     SELECT key, ?1 FROM (${keyList})
+     WHERE NOT EXISTS (SELECT 1 FROM (${keyList}) k
+                       WHERE (SELECT COUNT(*) FROM join_failures f WHERE f.key = k.key AND f.failed_at > ?2) >= ${MAX_FAILURES})
+     RETURNING rowid`,
+  )
+    .bind(new Date(now).toISOString(), new Date(now - FAILURE_WINDOW_MS).toISOString(), ...keys)
+    .all<{ rowid: number }>();
+  return results.length > 0 ? results.map((row) => row.rowid) : null;
 }
 
-async function recordFailure(env: Env, keys: string[]): Promise<void> {
-  const now = new Date().toISOString();
-  const insert = env.DB.prepare("INSERT INTO join_failures (key, failed_at) VALUES (?, ?)");
-  await env.DB.batch(keys.map((key) => insert.bind(key, now)));
+async function refundAttempt(env: Env, rowids: number[]): Promise<void> {
+  await env.DB.prepare(`DELETE FROM join_failures WHERE rowid IN (${rowids.map(() => "?").join(", ")})`)
+    .bind(...rowids)
+    .run();
 }
 
 export function memberJson(row: MemberRow) {

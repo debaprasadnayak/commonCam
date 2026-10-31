@@ -78,6 +78,11 @@ async function join(token: string, groupId: string, host: string) {
   return (await res.json<any>()).member;
 }
 
+/** As if the upload's storage reservation were taken (or renewed) just before the time-travelling cron runs. */
+async function keepReserved(itemId: string) {
+  await env.DB.prepare("UPDATE items SET reserved_until = '9999-12-31T00:00:00.000Z' WHERE id = ?").bind(itemId).run();
+}
+
 async function objectKeys(prefix: string) {
   return (await env.MEDIA.list({ prefix })).objects.map((o) => o.key);
 }
@@ -113,6 +118,8 @@ async function busyGroup(prefix: string) {
   ).json<any>();
   const plan = await (await api(`/groups/${group.id}/multipart/${multipart.itemId}/parts`, { method: "POST", token: guest })).json<any>();
   expect((await api(plan.parts[0].url, { method: "PUT", body: new Uint8Array(10) })).status).toBe(200);
+  // Still being resumed when the group is deleted, so the hourly expiry of abandoned uploads has not removed it.
+  await keepReserved(multipart.itemId);
   return { host, guest, group };
 }
 
@@ -127,6 +134,7 @@ describe("expiry: Active → Grace", () => {
       await api(`/groups/${group.id}/uploads`, { method: "POST", token: host, body: JSON.stringify({ bytes: 5, contentType: "image/heic" }) })
     ).json<any>();
     await api(late.uploadUrl, { method: "PUT", body: new Uint8Array(5) });
+    await keepReserved(late.itemId);
 
     await cronAt(Date.parse(group.endsAt) + 60_000);
 

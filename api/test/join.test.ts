@@ -144,6 +144,28 @@ describe("POST /join", () => {
     expect(res.status).toBe(429);
   });
 
+  it("admits at most 10 of a simultaneous burst of guesses from one network, across device tokens", async () => {
+    const ip = "192.0.2.150";
+    const responses = await Promise.all(
+      Array.from({ length: 32 }, (_, i) => join(`burst-guesser-${i}`, { qrToken: `burst-guess-${i}`, ...consentingGuest }, ip)),
+    );
+
+    expect(responses.filter((r) => r.status === 404)).toHaveLength(10);
+    expect(responses.filter((r) => r.status === 429)).toHaveLength(22);
+  });
+
+  it("does not count successful joins or malformed requests as guesses", async () => {
+    const ip = "192.0.2.151";
+    const group = await createGroup("host-ratelimit-ok");
+    const { qrToken } = await inviteFor("host-ratelimit-ok", group.id);
+    for (let i = 0; i < 12; i++) {
+      expect((await join("returning-guest", { qrToken, ...consentingGuest }, ip)).status).toBe(i === 0 ? 201 : 200);
+      expect((await api("/join", { method: "POST", token: `malformed-${i}`, ip, body: "null" })).status).toBe(400);
+    }
+
+    expect((await join("guesser-after", { qrToken: "wrong", ...consentingGuest }, ip)).status).toBe(404);
+  });
+
   it("rate-limits repeated guessing from one device, even across networks", async () => {
     for (let i = 0; i < 10; i++) {
       expect((await join("guessing-device", { qrToken: `guess-${i}` }, `10.0.0.${i}`)).status).toBe(404);

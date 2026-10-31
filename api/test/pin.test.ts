@@ -132,6 +132,16 @@ describe("PIN join uses the same safeguards as QR", () => {
     expect(res.status).toBe(429);
   });
 
+  it("admits at most 10 of a simultaneous burst of PIN guesses from one network, across device tokens", async () => {
+    const ip = "192.0.2.141";
+    const responses = await Promise.all(
+      Array.from({ length: 32 }, (_, i) => join(`pin-burst-${i}`, { pin: `YYYY${i}`, ...consentingGuest }, ip)),
+    );
+
+    expect(responses.filter((r) => r.status === 404)).toHaveLength(10);
+    expect(responses.filter((r) => r.status === 429)).toHaveLength(22);
+  });
+
   it("enforces the tier's people cap", async () => {
     const { pin } = await groupWithPin("host-pin-cap");
     for (const guest of ["pin-cap-1", "pin-cap-2", "pin-cap-3"]) {

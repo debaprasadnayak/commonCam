@@ -1,4 +1,5 @@
 import type { AppStoreTransaction } from "./appStore";
+import { readJsonObject } from "./body";
 import { loadGroup, toJson } from "./groups";
 import { isHostOrCoHost } from "./hostControls";
 import type { Env } from "./index";
@@ -16,7 +17,8 @@ export async function handleUpgrades(request: Request, url: URL, env: Env, devic
   const group = await loadGroup(env.DB, groupId);
   if (!group) return new Response("Not found", { status: 404 });
 
-  const body = await request.json<{ signedTransaction?: unknown }>().catch(() => ({}) as { signedTransaction?: unknown });
+  const body = await readJsonObject(request);
+  if (body instanceof Response) return body;
   const transaction = await verifyPurchase(env, body.signedTransaction);
   if (transaction instanceof Response) return transaction;
   // Binds the payment to this group, so it can't be redeemed on another one.

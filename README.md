@@ -35,6 +35,25 @@ The app talks to the dev Worker at `https://commoncam-api-dev.dev094u.workers.de
 - The transaction's App Store `environment` must equal `APP_STORE_ENV` in `api/wrangler.jsonc` (otherwise 403). It is `Sandbox` for the dev Worker; set it to `Production` for the launch (production) Worker so Sandbox purchases can't activate real groups.
 - Purchases made against the local `.storekit` file are signed by Xcode, not Apple, so `npm run dev` rejects them (403); the purchase stays unfinished in StoreKit. End-to-end activation needs App Store Connect sandbox products.
 
+### Refunds and revocations
+
+A signed transaction the app submits can predate a refund, so before anything is granted (paid group, upgrade, add-on, extension; all go through `verifyPurchase` in `api/src/purchases.ts`) the Worker checks the transaction's current state. A refunded or revoked transaction is refused with 403, as before; a replayed one is still refused with 409.
+
+1. **App Store Server Notifications V2** (`POST /app-store/notifications`, `api/src/appStoreNotifications.ts`, no device token). The `signedPayload` is verified against Apple Root CA - G3 like transactions are. `REFUND` and `REVOKE` mark the transaction id revoked in `app_store_revocations`, whether or not it was ever redeemed; `REFUND_REVERSED` reinstates it. Only a newer notification (by Apple's `signedDate`) changes a row, so repeats and out-of-order deliveries are harmless. Other types are acknowledged and ignored. In App Store Connect (App → App Information → App Store Server Notifications) choose Version 2 and set:
+   - Sandbox Server URL: `https://commoncam-api-dev.dev094u.workers.dev/app-store/notifications`
+   - Production Server URL: the launch Worker's `/app-store/notifications` (the Worker only records notifications whose environment equals its `APP_STORE_ENV`).
+2. **App Store Server API** Get Transaction Info (`GET /inApps/v1/transactions/{id}`, `api/src/appStoreServerApi.ts`), with an ES256 JWT signed by an In-App Purchase key, then verified like any signed transaction.
+
+If Apple can't be asked (key not configured, Apple unreachable or answering with an error): with `APP_STORE_ENV` = `Production` the purchase is refused with **503** (`Retry-After: 300`); the app leaves it unfinished in StoreKit and `PurchaseRouter` retries it on the next launch or group refresh. With `Sandbox` it is **allowed**, with the log line `purchases: App Store Server API unavailable (...)`, so the dev Worker works before an App Store Connect key exists. Configure the key before switching to `Production`, or every purchase will wait.
+
+To configure the App Store Server API (needs App Store Connect access):
+
+1. App Store Connect → Users and Access → Integrations → In-App Purchase: generate a key; note its Key ID and the Issuer ID shown on that page.
+2. Add to `vars` in `api/wrangler.jsonc`: `"APPSTORE_ISSUER_ID": "<issuer id>"`, `"APPSTORE_KEY_ID": "<key id>"`.
+3. Add the downloaded `.p8` file's contents as the repository Actions secret `APPSTORE_PRIVATE_KEY`; the `deploy-dev` job then runs `wrangler secret put APPSTORE_PRIVATE_KEY` (the step is skipped while the secret is absent). Manually: `npx wrangler secret put APPSTORE_PRIVATE_KEY --name commoncam-api-dev < SubscriptionKey_XXXX.p8`.
+
+A refund that arrives after a transaction was redeemed is recorded but does not take the entitlement back.
+
 ## Continuous integration
 
 CI runs on pushes to `main`, on non-draft pull requests to `main`, and on demand. Draft PRs and pushes to other branches don't trigger it, because the iOS job runs on macOS and macOS minutes count 10× against the Actions quota. Run the tests locally while building, and start CI on a branch with `gh workflow run CI --ref <branch>` when you need it. A newer run on the same ref cancels the older one, and changes to docs alone don't trigger CI.
@@ -47,6 +66,7 @@ The `deploy-dev` GitHub Actions job deploys the API to `commoncam-api-dev` on pu
 - `CLOUDFLARE_ACCOUNT_ID`: the Cloudflare account ID.
 - `MEDIA_SIGNING_KEY`: a private signing key for media URLs; use a strong random value and do not commit it.
 - `APNS_PRIVATE_KEY` (optional until an Apple team exists): the APNs `.p8` key; see Push notifications below.
+- `APPSTORE_PRIVATE_KEY` (optional on the Sandbox dev Worker; required before `APP_STORE_ENV` is `Production`): the App Store Server API In-App Purchase `.p8` key; see Refunds and revocations above.
 
 The dev Worker uses the `commoncam` D1 database and private `commoncam-media` R2 bucket. The `commoncam-events` Queue is provisioned but is not yet bound to the Worker. The hourly cron trigger for the lifecycle job (below) is declared in `api/wrangler.jsonc` and deployed with the Worker.
 
@@ -57,6 +77,8 @@ The dev Worker uses the `commoncam` D1 database and private `commoncam-media` R2
 1. **Active → Grace** when `ends_at` passes. `grace_ends_at = ends_at + GRACE_DAYS` (one value in `vars` in `api/wrangler.jsonc`, default `14`). Grace groups are read-only: every upload endpoint answers 410, galleries and downloads keep working.
 2. **Grace → Deleted** when `grace_ends_at` passes: unfinished multipart uploads are aborted, every R2 object under `groups/<groupId>/` is deleted, the prefix is listed again to check it is empty, then the group's items, multipart rows, reports, blocks, sent-notification records and members are deleted and the group row is kept as a `Deleted` tombstone (orders still reference it; the anonymous `daily_stats` counts are untouched). Each deletion writes a row to the `deletions` table (`objects_deleted`, `objects_remaining` = 0, `items_deleted`, `deleted_at`) as the audit record. If objects remain, the group stays in Grace and the next run retries.
 3. **Grace → Active** when the host buys the `app.commoncam.extension` consumable for the group (StoreKit `appAccountToken` = group id): `POST /groups/:id/extend {"signedTransaction"}`, verified and recorded in `orders` like upgrades/add-ons (each transaction once). The group reopens for 7 days from now (`EXTENSION` in `api/src/tiers.ts`).
+
+The same job also **expires abandoned uploads**. Requesting an upload (`POST /groups/:id/uploads` or `/multipart`) reserves its bytes: it is refused with 413 unless ready bytes + every unconfirmed upload + the new one fit the group's cap (one conditional D1 insert, so concurrent requests can't overshoot). A single-PUT reservation lasts 1 hour (its URL 15 minutes); a multipart one 24 hours, renewed by each part plan or completion. Byte PUTs, part uploads, completion and confirm are refused once it has lapsed (410 for signed URLs, 404 for API calls; the app's upload queue then starts the shot over). Each run marks lapsed reservations expired, aborts their multipart upload, deletes their R2 object and rows, and clears the group's `storage_full` flag (`api/src/reservations.ts`). If R2 refuses to assemble a multipart upload, its reservation is released the same way (409).
 
 ### R2 lifecycle rule (backstop, configure manually)
 

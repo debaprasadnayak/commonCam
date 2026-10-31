@@ -1,5 +1,6 @@
 import type { Env } from "./index";
 import { createPendingItem, findCaller, isOpen, sign, verify } from "./media";
+import { MULTIPART_RESERVATION_S, releaseReservation, renewReservation } from "./reservations";
 
 // R2's minimum size for every part but the last. Smaller parts mean less to redo after an interruption.
 export const PART_SIZE = 5 * 1024 * 1024;
@@ -13,6 +14,8 @@ interface UploadRow {
   part_size: number;
   part_count: number;
   completed: number;
+  status: string;
+  reserved_until: string;
 }
 
 /**
@@ -33,7 +36,11 @@ export async function handleSignedParts(request: Request, url: URL, env: Env): P
     return new Response("Invalid or expired link", { status: 403 });
   }
   const upload = await findUpload(env, "i.id = ?", itemId);
-  if (!upload || upload.completed) return new Response("This upload is already complete", { status: 409 });
+  if (upload?.completed) return new Response("This upload is already complete", { status: 409 });
+  // Parts are only taken while the item's storage reservation holds (reservations.ts).
+  if (!upload || upload.status !== "pending" || upload.reserved_until <= new Date().toISOString()) {
+    return new Response("This upload has expired", { status: 410 });
+  }
   if (request.headers.get("Content-Length") !== bytes || !request.body) {
     return new Response("Body must be exactly the announced size", { status: 400 });
   }
@@ -59,11 +66,15 @@ export async function handleMultipart(request: Request, url: URL, env: Env, devi
     : null;
   if (!caller || !upload) return new Response("Unknown upload", { status: 404 });
   if (!isOpen(caller.group)) return new Response("This group is no longer open", { status: 410 });
+  // Resuming or completing keeps the reservation alive; a lapsed one is gone, so the client starts over.
+  if (!upload.completed && !(await renewReservation(env, upload.item_id, MULTIPART_RESERVATION_S))) {
+    return new Response("Unknown upload", { status: 404 });
+  }
   return action === "parts" ? plan(env, url.origin, upload) : complete(env, upload);
 }
 
 async function start(request: Request, env: Env, groupId: string, deviceId: string) {
-  const item = await createPendingItem(request, env, groupId, deviceId);
+  const item = await createPendingItem(request, env, groupId, deviceId, { reservationSeconds: MULTIPART_RESERVATION_S });
   if (item instanceof Response) return item;
   const multipart = await env.MEDIA.createMultipartUpload(item.objectKey, { httpMetadata: { contentType: item.contentType } });
   const partCount = Math.ceil(item.bytes / PART_SIZE);
@@ -103,7 +114,12 @@ async function complete(env: Env, upload: UploadRow) {
   } catch (error) {
     // A concurrent complete may already have assembled the object.
     const stored = await env.MEDIA.head(upload.object_key);
-    if (stored?.size !== upload.bytes) throw error;
+    if (stored?.size !== upload.bytes) {
+      // R2 would not assemble these parts: free the reservation and its bytes; the client starts a new upload.
+      console.error(`multipart: completing ${upload.item_id} failed: ${error}`);
+      await releaseReservation(env, upload.item_id);
+      return new Response("The upload could not be assembled; start a new one", { status: 409 });
+    }
   }
   await env.DB.prepare("UPDATE multipart_uploads SET completed = 1 WHERE item_id = ?").bind(upload.item_id).run();
   return new Response(null, { status: 204 });
@@ -119,7 +135,7 @@ async function storedParts(env: Env, upload: UploadRow) {
 
 function findUpload(env: Env, where: string, ...values: string[]) {
   return env.DB.prepare(
-    `SELECT i.id AS item_id, i.object_key, i.bytes, u.upload_id, u.part_size, u.part_count, u.completed
+    `SELECT i.id AS item_id, i.object_key, i.bytes, i.status, i.reserved_until, u.upload_id, u.part_size, u.part_count, u.completed
      FROM items i JOIN multipart_uploads u ON u.item_id = i.id WHERE ${where}`,
   )
     .bind(...values)

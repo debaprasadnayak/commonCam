@@ -1,10 +1,12 @@
 import { countUpload } from "./analytics";
+import { readJsonObject } from "./body";
 import { parseFilterRecipe } from "./filterRecipe";
 import { isHostOrCoHost } from "./hostControls";
 import type { Env } from "./index";
 import { VISIBLE_TO_VIEWER } from "./moderation";
 import { syncStorageWarnings } from "./push";
 import { flagIfSensitive } from "./sensitiveContent";
+import { RESERVATIONS_OF_GROUP, SINGLE_UPLOAD_RESERVATION_S } from "./reservations";
 import { refuseForStorage } from "./storageCap";
 
 const UPLOAD_URL_TTL_S = 15 * 60;
@@ -71,6 +73,11 @@ export async function handleSignedMedia(request: Request, url: URL, env: Env): P
   if (request.headers.get("Content-Length") !== bytes || !request.body) {
     return new Response("Body must be exactly the announced size", { status: 400 });
   }
+  // The bytes are only taken while the item's storage reservation holds (not expired, not confirmed yet).
+  const reserved = await env.DB.prepare("SELECT 1 FROM items WHERE object_key = ? AND status = 'pending' AND reserved_until > ?")
+    .bind(key, new Date().toISOString())
+    .first();
+  if (!reserved) return new Response("This upload has expired or is already confirmed", { status: 410 });
   await env.MEDIA.put(key, request.body, { httpMetadata: { contentType: type } });
   return new Response(null, { status: 200 });
 }
@@ -86,7 +93,7 @@ export async function handleMedia(request: Request, url: URL, env: Env, deviceId
 }
 
 async function requestUpload(request: Request, url: URL, env: Env, groupId: string, deviceId: string) {
-  const item = await createPendingItem(request, env, groupId, deviceId, { allowVideo: false });
+  const item = await createPendingItem(request, env, groupId, deviceId, { allowVideo: false, reservationSeconds: SINGLE_UPLOAD_RESERVATION_S });
   if (item instanceof Response) return item;
   const exp = String(Math.floor(Date.now() / 1000) + UPLOAD_URL_TTL_S);
   const uploadUrl = await signedUrl(env, url.origin, "PUT", item.objectKey, exp, String(item.bytes), item.contentType);
@@ -101,7 +108,8 @@ export interface PendingItem {
 }
 
 /**
- * Validates an upload request body ({bytes, contentType}) for the caller and records a 'pending' item.
+ * Validates an upload request body ({bytes, contentType}) for the caller and records a 'pending' item, which
+ * reserves its bytes against the storage cap for `reservationSeconds` (reservations.ts).
  * Video is only accepted where `allowVideo` (the resumable multipart upload): clips are too big for one PUT.
  */
 export async function createPendingItem(
@@ -109,13 +117,14 @@ export async function createPendingItem(
   env: Env,
   groupId: string,
   deviceId: string,
-  { allowVideo = true } = {},
+  { allowVideo = true, reservationSeconds }: { allowVideo?: boolean; reservationSeconds: number },
 ): Promise<PendingItem | Response> {
   const caller = await findCaller(env, groupId, deviceId);
   if (!caller) return new Response("Not found", { status: 404 });
   if (!isOpen(caller.group)) return new Response("This group is no longer open", { status: 410 });
 
-  const body = await request.json<{ bytes?: unknown; contentType?: unknown }>().catch(() => ({}) as Record<string, unknown>);
+  const body = await readJsonObject(request);
+  if (body instanceof Response) return body;
   const bytes = body.bytes;
   const contentType = typeof body.contentType === "string" ? body.contentType : "";
   if (typeof bytes !== "number" || !Number.isSafeInteger(bytes) || bytes <= 0) {
@@ -123,23 +132,32 @@ export async function createPendingItem(
   }
   if (!CONTENT_TYPES[contentType]) return new Response("Unsupported content type", { status: 400 });
   if (CONTENT_TYPES[contentType] === "video" && !allowVideo) return new Response("Video must use the multipart upload", { status: 400 });
-  if (caller.group.storage_used_bytes + bytes > caller.group.storage_cap_bytes) return refuseForStorage(env, groupId);
 
   const itemId = crypto.randomUUID();
   const objectKey = `groups/${groupId}/${itemId}`;
-  await env.DB.prepare(
-    `INSERT INTO items (id, group_id, member_id, contributor_device_id, type, content_type, bytes, object_key, status, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)`,
+  const now = Date.now();
+  // One statement, so concurrent requests cannot all pass the check: the item (and with it the reservation) is
+  // inserted only if ready bytes + every unexpired-or-uncleaned reservation + this upload fit the cap.
+  const { meta } = await env.DB.prepare(
+    `INSERT INTO items (id, group_id, member_id, contributor_device_id, type, content_type, bytes, object_key, status, created_at, reserved_until)
+     SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 'pending', ?9, ?10
+     WHERE EXISTS (SELECT 1 FROM groups g WHERE g.id = ?2
+                   AND g.storage_used_bytes + (${RESERVATIONS_OF_GROUP}) + ?7 <= g.storage_cap_bytes)`,
   )
-    .bind(itemId, groupId, caller.memberId, deviceId, CONTENT_TYPES[contentType], contentType, bytes, objectKey, new Date().toISOString())
+    .bind(
+      itemId, groupId, caller.memberId, deviceId, CONTENT_TYPES[contentType], contentType, bytes, objectKey,
+      new Date(now).toISOString(), new Date(now + reservationSeconds * 1000).toISOString(),
+    )
     .run();
+  if (meta.changes === 0) return refuseForStorage(env, groupId);
   return { itemId, objectKey, bytes, contentType };
 }
 
 async function confirmItem(request: Request, env: Env, groupId: string, deviceId: string) {
   const caller = await findCaller(env, groupId, deviceId);
   if (!caller) return new Response("Not found", { status: 404 });
-  const body = await request.json<{ itemId?: unknown; filterRecipe?: unknown; sensitive?: unknown }>().catch(() => ({}) as Record<string, unknown>);
+  const body = await readJsonObject(request);
+  if (body instanceof Response) return body;
   const recipe = parseFilterRecipe(body.filterRecipe);
   if (recipe === undefined) return new Response("Invalid filter recipe", { status: 400 });
   const item = typeof body.itemId === "string"
@@ -152,19 +170,21 @@ async function confirmItem(request: Request, env: Env, groupId: string, deviceId
   if (!item) return new Response("Unknown item", { status: 404 });
   if (item.type === "video" && recipe) return new Response("Video filters are baked in; no recipe", { status: 400 });
   if (item.status === "ready") return Response.json(await itemJson(env, await findItem(env, item.id), new URL(request.url).origin, true));
+  if (item.status === "expired") return new Response("Unknown item", { status: 404 });
   if (!isOpen(caller.group)) return new Response("This group is no longer open", { status: 410 });
 
   const stored = await env.MEDIA.head(item.object_key);
   if (!stored || stored.size !== item.bytes) return new Response("Upload not found", { status: 409 });
 
-  // One D1 transaction: the item is claimed ('confirming') only if it is pending and still fits, and every
-  // later statement runs only for a claimed item, so concurrent confirms cannot overshoot the cap and a
-  // failure leaves the item pending and storage uncharged.
+  // One D1 transaction: the item is claimed ('confirming') only if it is pending, its reservation has not
+  // expired and it still fits, and every later statement runs only for a claimed item, so concurrent confirms
+  // cannot overshoot the cap and a failure leaves the item pending and storage uncharged.
+  const now = new Date().toISOString();
   const [claim] = await env.DB.batch([
     env.DB.prepare(
-      `UPDATE items SET status = 'confirming', filter_recipe = ?3 WHERE id = ?1 AND status = 'pending'
+      `UPDATE items SET status = 'confirming', filter_recipe = ?3 WHERE id = ?1 AND status = 'pending' AND reserved_until > ?4
        AND EXISTS (SELECT 1 FROM groups WHERE id = ?2 AND storage_used_bytes + items.bytes <= storage_cap_bytes)`,
-    ).bind(item.id, groupId, recipe && JSON.stringify(recipe)),
+    ).bind(item.id, groupId, recipe && JSON.stringify(recipe), now),
     env.DB.prepare(
       `UPDATE groups SET storage_used_bytes = storage_used_bytes + ?1
        WHERE id = ?2 AND EXISTS (SELECT 1 FROM items WHERE id = ?3 AND status = 'confirming')`,
@@ -174,8 +194,21 @@ async function confirmItem(request: Request, env: Env, groupId: string, deviceId
     env.DB.prepare("UPDATE items SET status = 'ready' WHERE id = ? AND status = 'confirming'").bind(item.id),
   ]);
   if (claim.meta.changes === 0) {
-    const status = await env.DB.prepare("SELECT status FROM items WHERE id = ?").bind(item.id).first<string>("status");
-    if (status !== "pending") return new Response("Already being confirmed", { status: 409 });
+    const current = await env.DB.prepare("SELECT status, reserved_until FROM items WHERE id = ?")
+      .bind(item.id)
+      .first<{ status: string; reserved_until: string }>();
+    // The reservation lapsed: the hourly job deletes the bytes, so the client has to start a new upload.
+    if (!current || current.status === "expired" || (current.status === "pending" && current.reserved_until <= now)) {
+      return new Response("Unknown item", { status: 404 });
+    }
+    // A simultaneous retry won the claim: answer like any repeated confirm once it is ready. 'confirming' only
+    // exists inside the other confirm's D1 transaction, so this is a brief, retryable 409 (the app's queue retries it).
+    if (current.status === "ready") {
+      return Response.json(await itemJson(env, await findItem(env, item.id), new URL(request.url).origin, true));
+    }
+    if (current.status === "confirming") {
+      return new Response("Being confirmed by another request; retry", { status: 409, headers: { "Retry-After": "1" } });
+    }
     return refuseForStorage(env, groupId);
   }
   await syncStorageWarnings(env, groupId);

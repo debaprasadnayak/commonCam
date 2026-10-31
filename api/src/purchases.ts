@@ -1,5 +1,7 @@
 import { countGroupCreated } from "./analytics";
 import { InvalidTransaction, verifySignedTransaction, type AppStoreTransaction } from "./appStore";
+import { isRevokedByNotification } from "./appStoreNotifications";
+import { appStoreServerApi, appStoreServerApiConfig, AppStoreUnavailable } from "./appStoreServerApi";
 import { insertGroup, newGroupRow, toJson } from "./groups";
 import type { Env } from "./index";
 import { TIER_CREDIT_PRODUCT_IDS, TIERS, type PaidTier, type Tier } from "./tiers";
@@ -36,11 +38,16 @@ export async function createPaidGroup(
   return Response.json(toJson(row), { status: 201 });
 }
 
-/** The verified App Store transaction, or the 400/403 response to send instead. */
+/**
+ * The verified App Store transaction, or the 400/403/503 response to send instead. Every redemption (paid group,
+ * upgrade, add-on, extension) goes through here, so a refunded or revoked payment never activates anything: the
+ * submitted copy may predate the refund, so the current state is checked too (`refusalForCurrentState`).
+ */
 export async function verifyPurchase(env: Env, signedTransaction: unknown): Promise<AppStoreTransaction | Response> {
   if (typeof signedTransaction !== "string") return new Response("Purchases need a signedTransaction", { status: 400 });
+  let transaction: AppStoreTransaction;
   try {
-    return await verifySignedTransaction(signedTransaction, {
+    transaction = await verifySignedTransaction(signedTransaction, {
       rootCertB64: env.APPLE_ROOT_CA_G3,
       bundleId: env.APPLE_BUNDLE_ID,
       environment: env.APP_STORE_ENV,
@@ -48,6 +55,36 @@ export async function verifyPurchase(env: Env, signedTransaction: unknown): Prom
   } catch (error) {
     if (error instanceof InvalidTransaction) return new Response(`Invalid transaction: ${error.message}`, { status: 403 });
     throw error;
+  }
+  return (await refusalForCurrentState(env, transaction.transactionId)) ?? transaction;
+}
+
+const REVOKED = () => new Response("Invalid transaction: Transaction was refunded or revoked", { status: 403 });
+
+/**
+ * Refused if an App Store notification (appStoreNotifications.ts) or the App Store Server API says the transaction
+ * has been refunded or revoked. If Apple can't be asked (API not configured, unreachable, error):
+ * - Production: 503, so the app leaves the purchase unfinished in StoreKit and PurchaseRouter retries it later.
+ * - Sandbox: allowed, with a log line.
+ */
+async function refusalForCurrentState(env: Env, transactionId: string): Promise<Response | null> {
+  if (await isRevokedByNotification(env, transactionId)) return REVOKED();
+  const config = appStoreServerApiConfig(env);
+  try {
+    if (!config) throw new AppStoreUnavailable("not configured");
+    return (await appStoreServerApi(config).isRevoked(transactionId)) ? REVOKED() : null;
+  } catch (error) {
+    if (!(error instanceof AppStoreUnavailable)) throw error;
+    if (env.APP_STORE_ENV === "Production") {
+      console.error(`purchases: App Store Server API unavailable (${error.message}); refused transaction ${transactionId} for now`);
+      return new Response("Can't confirm the purchase with the App Store right now; try again later", {
+        status: 503,
+        headers: { "Retry-After": "300" },
+      });
+    }
+    // shortcut: Sandbox (dev) purchases go through unchecked until the App Store Server API key is configured (README).
+    console.log(`purchases: App Store Server API unavailable (${error.message}); allowed Sandbox transaction ${transactionId}`);
+    return null;
   }
 }
 

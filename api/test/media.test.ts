@@ -149,6 +149,20 @@ describe("POST /groups/:id/items (confirm)", () => {
     expect(await (await api(`/groups/${group.id}/items`, { token: guest })).json<any[]>()).toHaveLength(1);
   });
 
+  it("answers simultaneous retries with the one ready item, charging it once", async () => {
+    const { group, host, guest } = await groupWithGuest("simultaneous");
+    const ticket = await (await requestUpload(guest, group.id, 300)).json<any>();
+    await api(ticket.uploadUrl, { method: "PUT", body: fakeHeic(300) });
+
+    const responses = await Promise.all(Array.from({ length: 24 }, () => confirm(guest, group.id, ticket.itemId)));
+
+    expect(responses.map((r) => r.status).sort()).toEqual([...Array(23).fill(200), 201]);
+    const items = await Promise.all(responses.map((r) => r.json<any>()));
+    expect(new Set(items.map((item) => item.id))).toEqual(new Set([ticket.itemId]));
+    const [mine] = await (await api("/groups", { token: host })).json<any[]>();
+    expect(mine.storageUsedBytes).toBe(300);
+  });
+
   it("refuses to confirm before the bytes are uploaded, or someone else's item", async () => {
     const { group, host, guest } = await groupWithGuest("early");
     const ticket = await (await requestUpload(guest, group.id, 10)).json<any>();

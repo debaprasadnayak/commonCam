@@ -1,0 +1,63 @@
+(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+  - import "./vitest.config" without a file extension (vitest.stress.config.ts:2:18). Add the file extension
+  - import "./test/support/apnsKey" without a file extension (vitest.config.ts:3:23). Add the file extension
+  - import "./test/support/fakeAppStore" without a file extension (vitest.config.ts:4:47). Add the file extension
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+
+ RUN  v4.1.12 /Users/debanayak/Documents/Eqn Code Repo/commonCam-security/api
+
+stdout | test/stress.audit.ts > bounded local stress audit > serves 128 group reads at concurrency 1
+AUDIT {"scenario":"group-reads","concurrency":1,"requests":128,"elapsedMs":102,"requestsPerSecond":1254.9019607843138,"p50Ms":1,"p95Ms":2,"p99Ms":2,"statuses":{"200":128}}
+
+stdout | test/stress.audit.ts > bounded local stress audit > serves 128 group reads at concurrency 8
+AUDIT {"scenario":"group-reads","concurrency":8,"requests":128,"elapsedMs":56,"requestsPerSecond":2285.714285714286,"p50Ms":3,"p95Ms":4,"p99Ms":5,"statuses":{"200":128}}
+
+stdout | test/stress.audit.ts > bounded local stress audit > serves 128 group reads at concurrency 32
+AUDIT {"scenario":"group-reads","concurrency":32,"requests":128,"elapsedMs":59,"requestsPerSecond":2169.491525423729,"p50Ms":12,"p95Ms":16,"p99Ms":16,"statuses":{"200":128}}
+
+stdout | test/stress.audit.ts > bounded local stress audit > serves 128 group reads at concurrency 64
+AUDIT {"scenario":"group-reads","concurrency":64,"requests":128,"elapsedMs":54,"requestsPerSecond":2370.3703703703704,"p50Ms":25,"p95Ms":27,"p99Ms":27,"statuses":{"200":128}}
+
+stdout | test/stress.audit.ts > bounded local stress audit > serves 1024 group reads at concurrency 128
+AUDIT {"scenario":"group-reads","concurrency":128,"requests":1024,"elapsedMs":723,"requestsPerSecond":1416.3208852005532,"p50Ms":53,"p95Ms":181,"p99Ms":206,"statuses":{"200":1024}}
+
+stdout | test/stress.audit.ts > bounded local stress audit > bounds same-device free-group creation during a 64-request burst
+AUDIT {"scenario":"same-device-group-burst","requests":64,"statuses":{"201":1,"403":63},"groups":1}
+
+stdout | test/stress.audit.ts > bounded local stress audit > keeps the people cap under 24 concurrent joins, attempt 1
+AUDIT {"scenario":"concurrent-join-cap","attempt":0,"requests":24,"statuses":{"201":3,"409":21},"activeGuests":3,"peopleCap":4}
+
+stdout | test/stress.audit.ts > bounded local stress audit > keeps the people cap under 24 concurrent joins, attempt 2
+AUDIT {"scenario":"concurrent-join-cap","attempt":1,"requests":24,"statuses":{"201":3,"409":21},"activeGuests":3,"peopleCap":4}
+
+stdout | test/stress.audit.ts > bounded local stress audit > keeps the people cap under 24 concurrent joins, attempt 3
+AUDIT {"scenario":"concurrent-join-cap","attempt":2,"requests":24,"statuses":{"201":3,"409":21},"activeGuests":3,"peopleCap":4}
+
+stdout | test/stress.audit.ts > bounded local stress audit > rate-limits a burst of 32 invite guesses from one IP
+AUDIT {"scenario":"concurrent-invite-guessing","requests":32,"statuses":{"404":10,"429":22},"allowed":10}
+
+stdout | test/stress.audit.ts > bounded local stress audit > rate-limits the sequential control of 32 invite guesses
+AUDIT {"scenario":"sequential-invite-control","requests":32,"statuses":{"404":10,"429":22}}
+
+stdout | test/stress.audit.ts > bounded local stress audit > does not store pending media beyond a group cap
+AUDIT {"scenario":"pending-media-cap","requests":32,"capBytes":8,"storedBytes":8,"ticketStatuses":{"201":8,"413":24},"putStatuses":{"200":8},"confirmStatuses":{"201":8},"accountedBytes":8}
+
+stdout | test/stress.audit.ts > bounded local stress audit > accounts for one upload once under 24 simultaneous confirmations
+AUDIT {"scenario":"same-item-confirmation","requests":24,"statuses":{"200":23,"201":1},"accountedBytes":1,"galleryItems":1}
+
+stdout | test/stress.audit.ts > bounded local stress audit > round-trips 8 MiB of concurrent media and consumes 16 MiB of downloads
+AUDIT {"scenario":"media-streams","uploadCount":32,"downloadCount":64,"uploadConcurrency":8,"downloadConcurrency":16,"bytesPerObject":262144,"uploadBytes":8388608,"downloadBytes":16777216,"elapsedMs":378,"uploadStatuses":{"201":32},"downloadStatuses":{"200":64},"accountedBytes":8388608}
+
+stdout | test/stress.audit.ts > bounded local stress audit > returns client errors rather than server failures for malformed JSON shapes
+AUDIT {"scenario":"invalid-json-shapes","requests":42,"statuses":{"400":40,"404":2},"failures":[]}
+
+ ✓ test/stress.audit.ts (15 tests) 1874ms
+     ✓ serves 1024 group reads at concurrency 128  726ms
+     ✓ round-trips 8 MiB of concurrent media and consumes 16 MiB of downloads  379ms
+
+ Test Files  1 passed (1)
+      Tests  15 passed (15)
+   Start at  01:36:38
+   Duration  2.35s (transform 61ms, setup 116ms, import 10ms, tests 1.87s, environment 0ms)
+
+JSON report written to /Users/debanayak/Documents/Eqn Code Repo/commonCam-security/api/reports/stress-results-2026-10-31.json

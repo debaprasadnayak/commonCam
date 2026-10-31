@@ -1,3 +1,4 @@
+import { readJsonObject } from "./body";
 import type { Env } from "./index";
 import { invite } from "./join";
 
@@ -67,7 +68,8 @@ async function rotateInvite(env: Env, url: URL, groupId: string, deviceId: strin
 
 async function setJoiningPaused(request: Request, env: Env, groupId: string, deviceId: string): Promise<Response> {
   if (!(await isHostOrCoHost(env, groupId, deviceId))) return new Response("Not found", { status: 404 });
-  const body = await request.json<{ paused?: unknown }>().catch(() => ({}) as { paused?: unknown });
+  const body = await readJsonObject(request);
+  if (body instanceof Response) return body;
   if (typeof body.paused !== "boolean") return new Response("paused must be true or false", { status: 400 });
   await env.DB.prepare("UPDATE groups SET joining_paused = ? WHERE id = ?").bind(body.paused ? 1 : 0, groupId).run();
   return Response.json({ joiningPaused: body.paused });
