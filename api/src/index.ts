@@ -1,6 +1,7 @@
 import { countGroupCreated } from "./analytics";
 import { handleAppStoreNotifications } from "./appStoreNotifications";
 import { handleApproval } from "./approval";
+import { readJsonObject } from "./body";
 import { handleDeleteItem } from "./deleteItem";
 import { GROUP_SELECT, insertTasterGroup, newGroupRow, toJson, type GroupRow } from "./groups";
 import { handleExtension } from "./extension";
@@ -61,9 +62,8 @@ export default {
     const deviceId = await sha256Hex(deviceToken);
 
     if (url.pathname === "/groups" && request.method === "POST") {
-      const body = await request
-        .json<{ tier?: string; signedTransaction?: unknown }>()
-        .catch(() => ({ tier: undefined, signedTransaction: undefined }));
+      const body = await readJsonObject(request);
+      if (body instanceof Response) return body;
       if (isPaidTier(body.tier)) return createPaidGroup(env, deviceId, body.tier, body.signedTransaction);
       if (body.tier !== "taster") return new Response("Unknown tier", { status: 400 });
       const row = newGroupRow("taster");

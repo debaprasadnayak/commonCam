@@ -1,4 +1,5 @@
 import { InvalidTransaction, verifyAppleSignedPayload, verifySignedTransaction } from "./appStore";
+import { readJsonObject } from "./body";
 import type { Env } from "./index";
 
 /** Notification types that change whether a transaction may still be redeemed: true = revoked. */
@@ -11,8 +12,9 @@ const REVOCATION_TYPES: Record<string, boolean> = { REFUND: true, REVOKE: true, 
  */
 export async function handleAppStoreNotifications(request: Request, url: URL, env: Env): Promise<Response | null> {
   if (url.pathname !== "/app-store/notifications" || request.method !== "POST") return null;
-  const body = await request.json<{ signedPayload?: unknown }>().catch(() => null);
-  if (typeof body?.signedPayload !== "string") return new Response("Expected {signedPayload}", { status: 400 });
+  const body = await readJsonObject(request);
+  if (body instanceof Response) return body;
+  if (typeof body.signedPayload !== "string") return new Response("Expected {signedPayload}", { status: 400 });
 
   let transactionId: string;
   let revoked: boolean;

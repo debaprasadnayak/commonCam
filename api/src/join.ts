@@ -1,4 +1,5 @@
 import { newMemberStatus } from "./approval";
+import { readJsonObject } from "./body";
 import { isHostOrCoHost, isJoiningPaused, joinRefusal } from "./hostControls";
 import { GROUP_SELECT, type GroupRow, toJson } from "./groups";
 import type { Env } from "./index";
@@ -103,9 +104,8 @@ async function join(request: Request, env: Env, deviceId: string): Promise<Respo
   if (ip) keys.push(`ip:${ip}`);
   if (await isRateLimited(env, keys)) return new Response("Too many attempts, try again later", { status: 429 });
 
-  const body = await request
-    .json<{ qrToken?: unknown; pin?: unknown; displayName?: unknown; colour?: unknown; consent?: unknown }>()
-    .catch(() => ({}) as Record<string, unknown>);
+  const body = await readJsonObject(request);
+  if (body instanceof Response) return body;
   const pin = normalizePin(body.pin);
   const group =
     typeof body.qrToken === "string"

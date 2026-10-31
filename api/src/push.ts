@@ -1,4 +1,5 @@
 import { apnsSender, apnsConfig } from "./apns";
+import { readJsonObject } from "./body";
 import type { Env } from "./index";
 import { groupStorageLevel, type GroupStorage } from "./storageCap";
 
@@ -26,7 +27,8 @@ function pushSender(env: Env): PushSender | null {
 /** `PUT /devices/push-token {token}`: the app's APNs device token (hex), tied to the caller's device. */
 export async function handlePushToken(request: Request, url: URL, env: Env, deviceId: string): Promise<Response | null> {
   if (url.pathname !== "/devices/push-token" || request.method !== "PUT") return null;
-  const body = await request.json<{ token?: unknown }>().catch(() => ({}) as { token?: unknown });
+  const body = await readJsonObject(request);
+  if (body instanceof Response) return body;
   const token = typeof body.token === "string" ? body.token.toLowerCase() : "";
   if (!/^(?:[0-9a-f]{2}){16,100}$/.test(token)) return new Response("Invalid APNs device token", { status: 400 });
   await env.DB.prepare(

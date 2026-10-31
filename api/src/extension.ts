@@ -1,3 +1,4 @@
+import { readJsonObject } from "./body";
 import { loadGroup, toJson } from "./groups";
 import type { Env } from "./index";
 import { isReplayedTransaction, recordOrder, verifyPurchase } from "./purchases";
@@ -24,7 +25,8 @@ export async function handleExtension(request: Request, url: URL, env: Env, devi
     return new Response("This group has not ended yet", { status: 400 });
   }
 
-  const body = await request.json<{ signedTransaction?: unknown }>().catch(() => ({}) as { signedTransaction?: unknown });
+  const body = await readJsonObject(request);
+  if (body instanceof Response) return body;
   const transaction = await verifyPurchase(env, body.signedTransaction);
   if (transaction instanceof Response) return transaction;
   if (transaction.productId !== EXTENSION.productId) return new Response("Transaction is not an extension", { status: 400 });

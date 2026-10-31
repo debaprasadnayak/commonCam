@@ -1,4 +1,5 @@
 import { countUpload } from "./analytics";
+import { readJsonObject } from "./body";
 import { parseFilterRecipe } from "./filterRecipe";
 import { isHostOrCoHost } from "./hostControls";
 import type { Env } from "./index";
@@ -122,7 +123,8 @@ export async function createPendingItem(
   if (!caller) return new Response("Not found", { status: 404 });
   if (!isOpen(caller.group)) return new Response("This group is no longer open", { status: 410 });
 
-  const body = await request.json<{ bytes?: unknown; contentType?: unknown }>().catch(() => ({}) as Record<string, unknown>);
+  const body = await readJsonObject(request);
+  if (body instanceof Response) return body;
   const bytes = body.bytes;
   const contentType = typeof body.contentType === "string" ? body.contentType : "";
   if (typeof bytes !== "number" || !Number.isSafeInteger(bytes) || bytes <= 0) {
@@ -154,7 +156,8 @@ export async function createPendingItem(
 async function confirmItem(request: Request, env: Env, groupId: string, deviceId: string) {
   const caller = await findCaller(env, groupId, deviceId);
   if (!caller) return new Response("Not found", { status: 404 });
-  const body = await request.json<{ itemId?: unknown; filterRecipe?: unknown; sensitive?: unknown }>().catch(() => ({}) as Record<string, unknown>);
+  const body = await readJsonObject(request);
+  if (body instanceof Response) return body;
   const recipe = parseFilterRecipe(body.filterRecipe);
   if (recipe === undefined) return new Response("Invalid filter recipe", { status: 400 });
   const item = typeof body.itemId === "string"

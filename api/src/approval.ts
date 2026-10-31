@@ -1,3 +1,4 @@
+import { readJsonObject } from "./body";
 import { isHostOrCoHost } from "./hostControls";
 import type { Env } from "./index";
 import { MEMBER_COLUMNS, type MemberRow, memberJson } from "./join";
@@ -12,7 +13,8 @@ export async function handleApproval(request: Request, url: URL, env: Env, devic
     const groupId = toggle[1];
     if (!(await isHostOrCoHost(env, groupId, deviceId))) return new Response("Not found", { status: 404 });
     if (request.method === "PUT") {
-      const body = await request.json<{ approvalRequired?: unknown }>().catch(() => ({}) as Record<string, unknown>);
+      const body = await readJsonObject(request);
+      if (body instanceof Response) return body;
       if (typeof body.approvalRequired !== "boolean") return new Response("approvalRequired must be a boolean", { status: 400 });
       await env.DB.prepare("UPDATE groups SET approval_required = ? WHERE id = ?")
         .bind(body.approvalRequired ? 1 : 0, groupId)

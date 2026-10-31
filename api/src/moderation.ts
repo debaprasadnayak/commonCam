@@ -1,3 +1,4 @@
+import { readJsonObject } from "./body";
 import { deleteItem } from "./deleteItem";
 import { isHostOrCoHost } from "./hostControls";
 import type { Env } from "./index";
@@ -131,7 +132,8 @@ async function createReport(
   deviceId: string,
 ): Promise<Response> {
   if (!(await findCaller(env, groupId, deviceId))) return new Response("Not found", { status: 404 });
-  const body = await request.json<{ reason?: unknown }>().catch(() => ({}) as { reason?: unknown });
+  const body = await readJsonObject(request);
+  if (body instanceof Response) return body;
   const reason = typeof body.reason === "string" ? body.reason.trim() : "";
   if (!reason || reason.length > MAX_REASON_LENGTH) {
     return new Response(`reason must be 1–${MAX_REASON_LENGTH} characters`, { status: 400 });
